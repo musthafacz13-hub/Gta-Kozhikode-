@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { InputFrameState } from '../input/InputManager.ts';
+import { getCoastlineXAtZ } from '../world/GeoProjection.ts';
+import { KOZHIKODE_WORLD_BOUNDS } from '../world/KozhikodeGeography.ts';
 
 export interface StaticAabbCollider {
   minX: number;
@@ -18,10 +20,17 @@ export interface PlayerMoveResult {
   speed: number;
 }
 
-const WORLD_MIN_X = -72;
-const WORLD_MAX_X = 64;
-const WORLD_MIN_Z = -68;
-const WORLD_MAX_Z = 68;
+function clampToDistrictLand(x: number, z: number): { x: number; z: number } {
+  const clampedZ = THREE.MathUtils.clamp(
+    z,
+    KOZHIKODE_WORLD_BOUNDS.minZ + 6,
+    KOZHIKODE_WORLD_BOUNDS.maxZ - 6,
+  );
+  // Keep player east of Arabian Sea shoreline (-68 along downtown promenade)
+  const coastLimitX = Math.max(KOZHIKODE_WORLD_BOUNDS.minX + 10, getCoastlineXAtZ(clampedZ));
+  const clampedX = THREE.MathUtils.clamp(x, coastLimitX, KOZHIKODE_WORLD_BOUNDS.maxX - 10);
+  return { x: clampedX, z: clampedZ };
+}
 
 function normalizeAngle(angle: number): number {
   let a = angle;
@@ -54,7 +63,8 @@ export class PlayerController {
   }
 
   resetSpawn(x = 22.5, z = 2.5, heading = -Math.PI * 0.35): void {
-    this.position.set(x, this.groundHeightFn(x, z), z);
+    const safe = clampToDistrictLand(x, z);
+    this.position.set(safe.x, this.groundHeightFn(safe.x, safe.z), safe.z);
     this.heading = heading;
     this.isMoving = false;
     this.isSprinting = false;
@@ -100,16 +110,12 @@ export class PlayerController {
     this.currentSpeed = maxSpeed * clampedMag;
 
     const stepDist = this.currentSpeed * dt;
-    let nextX = THREE.MathUtils.clamp(
+    const clamped = clampToDistrictLand(
       this.position.x + unitX * stepDist,
-      WORLD_MIN_X,
-      WORLD_MAX_X,
-    );
-    let nextZ = THREE.MathUtils.clamp(
       this.position.z + unitZ * stepDist,
-      WORLD_MIN_Z,
-      WORLD_MAX_Z,
     );
+    let nextX = clamped.x;
+    let nextZ = clamped.z;
 
     const resolved = this.resolveCollisions(nextX, nextZ);
     nextX = resolved.x;
@@ -175,9 +181,6 @@ export class PlayerController {
       }
     }
 
-    return {
-      x: THREE.MathUtils.clamp(rx, WORLD_MIN_X, WORLD_MAX_X),
-      z: THREE.MathUtils.clamp(rz, WORLD_MIN_Z, WORLD_MAX_Z),
-    };
+    return clampToDistrictLand(rx, rz);
   }
 }

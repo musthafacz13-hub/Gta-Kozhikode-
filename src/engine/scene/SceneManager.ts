@@ -1,123 +1,100 @@
 import * as THREE from 'three';
+import { resolveGraphicsPresetProfile, type GraphicsPresetProfile } from '../assets/AssetRegistry.ts';
 import type { AssetManager } from '../assets/AssetManager.ts';
 import type { PlayerMoveResult, StaticAabbCollider } from '../player/PlayerController.ts';
-import type { GraphicsTier } from '../types.ts';
-import { populateKozhikodePropsAndFoliage } from '../world/KeralaPropsAndFoliage.ts';
+import { AtmosphereSystem } from '../rendering/AtmosphereSystem.ts';
+import { MaterialLibrary } from '../rendering/MaterialLibrary.ts';
+import type { GraphicsTier, TimeOfDayPreset } from '../types.ts';
+import { getGroundHeightAt } from '../world/KozhikodeGeography.ts';
 import {
-  buildKozhikodeUrbanEnvironment,
-  getKozhikodeGroundHeight,
-} from '../world/KozhikodeBuildings.ts';
-import {
-  populateKozhikodeStreetLife,
+  createPlayerRig,
+  createProvisionalHumanFigure,
   type ProvisionalPlayerRig,
 } from '../world/ProvisionalVehiclesAndFigures.ts';
-import { createKozhikodeTextures, type KozhikodeTexturePack } from '../world/TextureAtlas.ts';
-
-export function disposeObject3D(root: THREE.Object3D): void {
-  root.traverse((obj) => {
-    const mesh = obj as THREE.Mesh;
-    if (mesh.geometry) {
-      mesh.geometry.dispose();
-    }
-    if (mesh.material) {
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach((mat) => mat.dispose());
-      } else {
-        mesh.material.dispose();
-      }
-    }
-  });
-}
-
-function createMalabarSkyDome(): THREE.Mesh {
-  const skyGeo = new THREE.SphereGeometry(280, 28, 18);
-  const skyMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    fog: false,
-    uniforms: {
-      topColor: { value: new THREE.Color(0x285f94) },
-      midColor: { value: new THREE.Color(0x9ec4db) },
-      horizonColor: { value: new THREE.Color(0xebd0a8) },
-      sunDir: { value: new THREE.Vector3(-0.68, 0.28, -0.68).normalize() },
-      sunColor: { value: new THREE.Color(0xffdca3) },
-    },
-    vertexShader: `
-      varying vec3 vWorldDir;
-      void main() {
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldDir = normalize(position);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vWorldDir;
-      uniform vec3 topColor;
-      uniform vec3 midColor;
-      uniform vec3 horizonColor;
-      uniform vec3 sunDir;
-      uniform vec3 sunColor;
-      void main() {
-        float h = clamp(vWorldDir.y, 0.0, 1.0);
-        vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.28, h));
-        col = mix(col, topColor, smoothstep(0.28, 0.85, h));
-        float sunAmt = max(dot(normalize(vWorldDir), sunDir), 0.0);
-        col += sunColor * (pow(sunAmt, 14.0) * 0.45 + pow(sunAmt, 180.0) * 0.9);
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
-  });
-  return new THREE.Mesh(skyGeo, skyMat);
-}
+import { WorldStreamer } from '../world/WorldStreamer.ts';
 
 export class SceneManager {
   readonly scene: THREE.Scene;
-  private readonly assetManager: AssetManager;
-  private readonly textures: KozhikodeTexturePack;
-  private readonly worldGroup = new THREE.Group();
-  private readonly colliders: StaticAabbCollider[];
-  private readonly playerRig: ProvisionalPlayerRig;
-  private debugGrid: THREE.GridHelper | null = null;
+  readonly materials: MaterialLibrary;
+  readonly atmosphere: AtmosphereSystem;
+  readonly worldStreamer: WorldStreamer;
 
-  private keyLight!: THREE.DirectionalLight;
-  private hemiLight!: THREE.HemisphereLight;
-  private waterMesh!: THREE.Mesh;
+  private readonly playerRig: ProvisionalPlayerRig;
+  private readonly citizenGroup = new THREE.Group();
+  private debugGrid: THREE.GridHelper | null = null;
+  private activePreset: GraphicsPresetProfile;
   private walkCyclePhase = 0;
 
-  constructor(assetManager: AssetManager, isSoftwareGl: boolean) {
-    this.assetManager = assetManager;
+  constructor(
+    assetManager: AssetManager,
+    isSoftwareGl: boolean,
+    initialTier: GraphicsTier = 'medium',
+    initialTimePreset: TimeOfDayPreset = 'golden',
+  ) {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xebd0a8);
-    this.scene.fog = new THREE.FogExp2(0xe2c39d, 0.0044);
+    this.activePreset = resolveGraphicsPresetProfile(initialTier);
+    this.materials = new MaterialLibrary(assetManager);
+    this.atmosphere = new AtmosphereSystem(this.scene, isSoftwareGl, this.activePreset);
+    this.atmosphere.setTimeOfDayPreset(initialTimePreset);
 
-    this.textures = createKozhikodeTextures(this.assetManager);
-    this.setupLighting(isSoftwareGl);
+    this.worldStreamer = new WorldStreamer(this.materials, this.activePreset);
+    this.scene.add(this.worldStreamer.root);
 
-    const skyDome = createMalabarSkyDome();
-    this.worldGroup.add(skyDome);
+    // Stream initial chunks around Mananchira square
+    this.worldStreamer.update(0, 22.5, 2.5);
 
-    const urban = buildKozhikodeUrbanEnvironment(this.worldGroup, this.textures);
-    this.waterMesh = urban.waterMesh;
-    this.colliders = urban.colliders;
+    this.playerRig = createPlayerRig(0x0f766e, 0x1e293b);
+    this.playerRig.group.position.set(22.5, 0.18, 2.5);
+    this.playerRig.group.rotation.y = -Math.PI * 0.35;
+    this.scene.add(this.playerRig.group);
 
-    populateKozhikodePropsAndFoliage(this.worldGroup, this.textures);
-    const streetLife = populateKozhikodeStreetLife(this.worldGroup, this.textures);
-    this.playerRig = streetLife.playerRig;
+    const citizens: [number, number, number, number, number, number][] = [
+      [26.8, 0.18, -11.5, -Math.PI / 2, 0xf59e0b, 0x334155],
+      [27.2, 0.18, -12.6, -Math.PI / 2, 0xe11d48, 0xf8fafc],
+      [-22.5, 0.18, -4.0, Math.PI * 0.5, 0x2563eb, 0x1f2937],
+      [43.2, 0.18, -19.5, -Math.PI * 0.5, 0xd97706, 0x111827],
+    ];
+    for (const [cx, cy, cz, rot, shirt, pants] of citizens) {
+      const fig = createProvisionalHumanFigure(shirt, pants);
+      fig.position.set(cx, cy, cz);
+      fig.rotation.y = rot;
+      this.citizenGroup.add(fig);
+    }
+    this.scene.add(this.citizenGroup);
 
-    this.debugGrid = new THREE.GridHelper(180, 36, 0xf59e0b, 0x475569);
+    this.debugGrid = new THREE.GridHelper(320, 64, 0xf59e0b, 0x475569);
     this.debugGrid.position.y = 0.06;
     this.debugGrid.visible = false;
-    this.worldGroup.add(this.debugGrid);
-
-    this.scene.add(this.worldGroup);
+    this.scene.add(this.debugGrid);
   }
 
   getColliders(): StaticAabbCollider[] {
-    return this.colliders;
+    return this.worldStreamer.getActiveColliders();
   }
 
   getGroundHeight(x: number, z: number): number {
-    return getKozhikodeGroundHeight(x, z);
+    return getGroundHeightAt(x, z);
+  }
+
+  getActiveChunkCount(): number {
+    return this.worldStreamer.getActiveChunkCount();
+  }
+
+  getRecommendedExposure(): number {
+    return this.atmosphere.getState().exposure;
+  }
+
+  getNightGlowFactor(): number {
+    return this.atmosphere.getState().nightGlowFactor;
+  }
+
+  getClockFormatted(): string {
+    return this.atmosphere.getClockFormatted();
+  }
+
+  setTimeOfDayPreset(preset: TimeOfDayPreset): void {
+    this.atmosphere.setTimeOfDayPreset(preset);
+    this.atmosphere.update(0, this.scene, this.playerRig.group.position.x, this.playerRig.group.position.z, this.activePreset);
   }
 
   syncPlayerVisual(state: PlayerMoveResult, dt: number): void {
@@ -152,55 +129,30 @@ export class SceneManager {
     return this.debugGrid?.visible ?? false;
   }
 
-  applyGraphicsTier(tier: GraphicsTier, isSoftwareGl: boolean): void {
-    if (tier === 'low') {
-      this.scene.fog = new THREE.FogExp2(0xe2c39d, 0.0068);
-      this.keyLight.castShadow = false;
-    } else {
-      const fogDensity = tier === 'medium' ? 0.0046 : 0.0036;
-      this.scene.fog = new THREE.FogExp2(0xe2c39d, fogDensity);
-      this.keyLight.castShadow = !isSoftwareGl;
-    }
+  setDestinationBeacon(target: { x: number; z: number } | null): void {
+    this.worldStreamer.setDestinationBeacon(target);
   }
 
-  update(dt: number): void {
-    if (this.textures.waterNormalMap) {
-      this.textures.waterNormalMap.offset.x = (this.textures.waterNormalMap.offset.x + dt * 0.025) % 1;
-      this.textures.waterNormalMap.offset.y = (this.textures.waterNormalMap.offset.y + dt * 0.015) % 1;
-    }
-    if (this.waterMesh) {
-      this.waterMesh.visible = true;
-    }
+  applyGraphicsTier(tier: GraphicsTier, isSoftwareGl: boolean): void {
+    this.activePreset = resolveGraphicsPresetProfile(tier);
+    this.atmosphere.applyGraphicsPreset(this.activePreset, isSoftwareGl);
+    this.worldStreamer.setGraphicsPreset(this.activePreset);
+  }
+
+  /**
+   * Advances atmosphere, coastal sea swells, night emissive lighting, and spatial chunk streaming.
+   * Returns true if streamed colliders changed so PlayerController can refresh its active list.
+   */
+  update(dt: number, focusX = 22.5, focusZ = 2.5, camera?: THREE.Camera): boolean {
+    this.atmosphere.update(dt, this.scene, focusX, focusZ, this.activePreset);
+    const atm = this.atmosphere.getState();
+    this.materials.update(dt, atm.nightGlowFactor, this.activePreset.waterDetailHigh);
+    return this.worldStreamer.update(dt, focusX, focusZ, camera);
   }
 
   dispose(): void {
-    disposeObject3D(this.worldGroup);
+    this.atmosphere.dispose();
+    this.worldStreamer.dispose();
     this.scene.clear();
-  }
-
-  private setupLighting(isSoftwareGl: boolean): void {
-    this.keyLight = new THREE.DirectionalLight(0xffe1b5, 2.5);
-    this.keyLight.position.set(-55, 42, -52);
-    this.keyLight.castShadow = !isSoftwareGl;
-    this.keyLight.shadow.mapSize.width = 2048;
-    this.keyLight.shadow.mapSize.height = 2048;
-    this.keyLight.shadow.camera.near = 5;
-    this.keyLight.shadow.camera.far = 210;
-    const d = 78;
-    this.keyLight.shadow.camera.left = -d;
-    this.keyLight.shadow.camera.right = d;
-    this.keyLight.shadow.camera.top = d;
-    this.keyLight.shadow.camera.bottom = -d;
-    this.keyLight.shadow.bias = -0.0004;
-    this.keyLight.shadow.normalBias = 0.03;
-    this.scene.add(this.keyLight);
-
-    this.hemiLight = new THREE.HemisphereLight(0xa5d8ff, 0x8b5a3c, 0.85);
-    this.hemiLight.position.set(0, 60, 0);
-    this.scene.add(this.hemiLight);
-
-    const bounceLight = new THREE.DirectionalLight(0xbcd7f5, 0.55);
-    bounceLight.position.set(48, 22, 42);
-    this.scene.add(bounceLight);
   }
 }

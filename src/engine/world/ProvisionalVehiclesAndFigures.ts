@@ -256,6 +256,13 @@ function createHumanRig(
   return { group: person, legL, legR, armL, armR };
 }
 
+export function createPlayerRig(
+  shirtHex = 0x0f766e,
+  pantsHex = 0x1e293b,
+): ProvisionalPlayerRig {
+  return createHumanRig(shirtHex, pantsHex);
+}
+
 export function createProvisionalHumanFigure(
   shirtHex: number,
   pantsHex: number,

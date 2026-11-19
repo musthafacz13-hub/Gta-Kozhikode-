@@ -163,9 +163,23 @@ export class RenderEngine {
     this.renderer.compile(scene, camera);
   }
 
+  setToneMappingExposure(exposure: number): void {
+    this.renderer.toneMappingExposure = exposure;
+  }
+
+  setAdaptivePixelRatio(ratio: number): void {
+    const applied = this.capabilities.isSoftwareGl ? 1 : Math.max(0.75, Math.min(2.0, ratio));
+    if (Math.abs(applied - this.capabilities.appliedPixelRatio) < 0.02) {
+      return;
+    }
+    this.renderer.setPixelRatio(applied);
+    this.capabilities.appliedPixelRatio = applied;
+  }
+
   applyQualitySettings(graphicsTier: GraphicsTier, pixelRatioCap: number): void {
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    const applied = this.capabilities.isSoftwareGl ? 1 : Math.min(dpr, pixelRatioCap);
+    const tierCap = graphicsTier === 'low' ? Math.min(1.0, pixelRatioCap) : pixelRatioCap;
+    const applied = this.capabilities.isSoftwareGl ? 1 : Math.min(dpr, tierCap);
     this.renderer.setPixelRatio(applied);
     this.capabilities.appliedPixelRatio = applied;
     this.renderer.shadowMap.enabled = !this.capabilities.isSoftwareGl && graphicsTier !== 'low';

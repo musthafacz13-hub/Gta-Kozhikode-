@@ -1,6 +1,29 @@
 import { useState } from 'react';
-import { Play, RotateCcw, Save, Settings, ShieldAlert, Terminal, Trash2, X } from 'lucide-react';
-import type { EngineHudSnapshot, GameSettings, GraphicsTier, LanguageMode, LogEntry } from '../engine/types.ts';
+import {
+  Home,
+  MapPin,
+  Music,
+  Play,
+  RotateCcw,
+  Save,
+  Settings,
+  ShieldAlert,
+  Terminal,
+  Trash2,
+  Volume2,
+  VolumeX,
+  Wind,
+  X,
+  Zap,
+} from 'lucide-react';
+import type {
+  EngineHudSnapshot,
+  GameSettings,
+  GraphicsTier,
+  LanguageMode,
+  LogEntry,
+  TimeOfDayPreset,
+} from '../engine/types.ts';
 
 interface PauseDiagnosticsModalProps {
   snapshot: EngineHudSnapshot;
@@ -9,6 +32,9 @@ interface PauseDiagnosticsModalProps {
   onClose: () => void;
   onResumePlay: () => void;
   onReturnTitle: () => void;
+  onTravelHome: () => void;
+  onTravelMananchira: () => void;
+  onToggleMute: () => void;
   onUpdateSettings: (patch: Partial<GameSettings>) => void;
   onResetSettings: () => void;
   onSaveManual: () => void;
@@ -26,6 +52,9 @@ export function PauseDiagnosticsModal({
   onClose,
   onResumePlay,
   onReturnTitle,
+  onTravelHome,
+  onTravelMananchira,
+  onToggleMute,
   onUpdateSettings,
   onResetSettings,
   onSaveManual,
@@ -37,14 +66,14 @@ export function PauseDiagnosticsModal({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/85 p-4">
-      <div className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-900 text-slate-100">
+      <div className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-900 text-slate-100 shadow-2xl">
         {/* Clean Game Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <h2 className="font-display text-2xl font-bold tracking-wide text-white">
             {view === 'pause' && 'PAUSED'}
             {view === 'saves' && 'SAVE SLOTS'}
-            {view === 'settings' && 'SETTINGS'}
-            {view === 'diagnostics' && 'DEVELOPER DIAGNOSTICS'}
+            {view === 'settings' && 'SETTINGS & AUDIO'}
+            {view === 'diagnostics' && 'SYSTEM DIAGNOSTICS'}
           </h2>
           <button
             type="button"
@@ -68,6 +97,25 @@ export function PauseDiagnosticsModal({
                 <span>Resume Game</span>
               </button>
 
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={onTravelHome}
+                  className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                >
+                  <Home className="h-4 w-4 text-emerald-400" />
+                  <span>Go to West Hill Home</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onTravelMananchira}
+                  className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-800 px-3 text-xs font-semibold text-slate-100 hover:bg-slate-700"
+                >
+                  <MapPin className="h-4 w-4 text-amber-400" />
+                  <span>Go to Mananchira</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -86,7 +134,7 @@ export function PauseDiagnosticsModal({
                 className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800 text-sm font-medium text-white hover:bg-slate-700"
               >
                 <Settings className="h-4 w-4 text-amber-400" />
-                <span>Graphics &amp; Controls</span>
+                <span>Graphics, Audio &amp; Controls</span>
               </button>
 
               <button
@@ -149,6 +197,63 @@ export function PauseDiagnosticsModal({
 
           {view === 'settings' && (
             <div className="space-y-5">
+              {/* Audio Mixer Section */}
+              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-300">
+                    <Volume2 className="h-4 w-4" />
+                    <span>Audio &amp; Soundtrack</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onToggleMute}
+                    className={`flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold ${
+                      snapshot.settings.masterMuted
+                        ? 'border-rose-400/50 bg-rose-500/20 text-rose-200'
+                        : 'border-white/15 bg-slate-800 text-slate-100 hover:bg-slate-700'
+                    }`}
+                  >
+                    {snapshot.settings.masterMuted ? (
+                      <VolumeX className="h-3.5 w-3.5" />
+                    ) : (
+                      <Volume2 className="h-3.5 w-3.5" />
+                    )}
+                    <span>{snapshot.settings.masterMuted ? 'Unmute' : 'Mute All'}</span>
+                  </button>
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <SettingsAudioSlider
+                    icon={<Volume2 className="h-3.5 w-3.5 text-amber-400" />}
+                    label="Master Volume"
+                    value={snapshot.settings.masterVolume}
+                    disabled={snapshot.settings.masterMuted}
+                    onChange={(v) => onUpdateSettings({ masterVolume: v, masterMuted: v <= 0.005 })}
+                  />
+                  <SettingsAudioSlider
+                    icon={<Music className="h-3.5 w-3.5 text-sky-400" />}
+                    label="Music Volume"
+                    value={snapshot.settings.musicVolume}
+                    disabled={snapshot.settings.masterMuted}
+                    onChange={(v) => onUpdateSettings({ musicVolume: v })}
+                  />
+                  <SettingsAudioSlider
+                    icon={<Zap className="h-3.5 w-3.5 text-emerald-400" />}
+                    label="Sound Effects"
+                    value={snapshot.settings.sfxVolume}
+                    disabled={snapshot.settings.masterMuted}
+                    onChange={(v) => onUpdateSettings({ sfxVolume: v })}
+                  />
+                  <SettingsAudioSlider
+                    icon={<Wind className="h-3.5 w-3.5 text-teal-300" />}
+                    label="Ambience Volume"
+                    value={snapshot.settings.ambientVolume}
+                    disabled={snapshot.settings.masterMuted}
+                    onChange={(v) => onUpdateSettings({ ambientVolume: v })}
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300">
                   Graphics Quality
@@ -210,6 +315,60 @@ export function PauseDiagnosticsModal({
                     }
                     className="mt-2 w-full accent-amber-500"
                   />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">
+                    Adaptive Rendering Resolution
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Auto-scales render density during heavy mobile frames
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateSettings({
+                      adaptiveResolution: !snapshot.settings.adaptiveResolution,
+                    })
+                  }
+                  className={`min-h-[38px] min-w-[68px] rounded-lg border px-3 text-xs font-semibold ${
+                    snapshot.settings.adaptiveResolution
+                      ? 'border-amber-400 bg-amber-500 text-slate-950'
+                      : 'border-white/15 bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {snapshot.settings.adaptiveResolution ? 'Auto' : 'Fixed'}
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300">Time of Day</label>
+                <div className="mt-2 grid grid-cols-5 gap-1.5">
+                  {(
+                    [
+                      ['dawn', 'Dawn'],
+                      ['noon', 'Noon'],
+                      ['golden', 'Golden'],
+                      ['night', 'Night'],
+                      ['cycle', 'Cycle'],
+                    ] as [TimeOfDayPreset, string][]
+                  ).map(([tod, label]) => (
+                    <button
+                      key={tod}
+                      type="button"
+                      onClick={() => onUpdateSettings({ timeOfDayPreset: tod })}
+                      className={`min-h-[40px] rounded-lg border text-xs font-medium ${
+                        snapshot.settings.timeOfDayPreset === tod
+                          ? 'border-amber-400 bg-amber-500 text-slate-950'
+                          : 'border-white/10 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -278,15 +437,15 @@ export function PauseDiagnosticsModal({
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-slate-950/70 p-3">
-                  <div className="text-xs text-slate-400">JS Heap</div>
-                  <div className="font-mono-tabular mt-1 text-base font-semibold">
-                    {snapshot.metrics.jsHeapMb !== null ? `${snapshot.metrics.jsHeapMb} MB` : 'N/A'}
+                  <div className="text-xs text-slate-400">Chunks / Regions</div>
+                  <div className="font-mono-tabular mt-1 text-base font-semibold text-teal-400">
+                    {snapshot.activeChunks} / {snapshot.totalRegions}
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-slate-950/70 p-3">
-                  <div className="text-xs text-slate-400">WebGL</div>
-                  <div className="font-mono-tabular mt-1 text-base font-semibold text-amber-400">
-                    {snapshot.capabilities?.backend.toUpperCase() ?? 'N/A'}
+                  <div className="text-xs text-slate-400">Audio Engine</div>
+                  <div className="font-mono-tabular mt-1 text-sm font-semibold text-amber-300">
+                    {snapshot.audio.unlocked ? 'ACTIVE' : 'GESTURE WAIT'} · {snapshot.audio.cachedBuffers}buf
                   </div>
                 </div>
               </div>
@@ -347,5 +506,41 @@ export function PauseDiagnosticsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function SettingsAudioSlider({
+  icon,
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  disabled: boolean;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="flex justify-between text-xs text-slate-300">
+        <span className="flex items-center gap-1.5">
+          {icon}
+          <span>{label}</span>
+        </span>
+        <span className="font-mono-tabular">{Math.round(value * 100)}%</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.02}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="mt-1.5 w-full accent-amber-500 disabled:opacity-45"
+      />
+    </label>
   );
 }

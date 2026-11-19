@@ -9,7 +9,7 @@ const _tint = new THREE.Color();
  * Builds an authentic curved coconut palm crown (arched feathered fronds + coconuts)
  * and curved ringed trunk geometry — zero primitive cones.
  */
-function buildPalmGeometries(): {
+export function buildPalmGeometries(): {
   trunkGeo: THREE.BufferGeometry;
   crownGeo: THREE.BufferGeometry;
   coconutGeo: THREE.BufferGeometry;
@@ -106,7 +106,7 @@ function buildPalmGeometries(): {
 /**
  * Builds curved shade-tree geometry (organic branching + multi-lobe canopy, no cones).
  */
-function buildShadeTreeGeometries(): {
+export function buildShadeTreeGeometries(): {
   trunkGeo: THREE.BufferGeometry;
   foliageGeo: THREE.BufferGeometry;
 } {

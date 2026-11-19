@@ -1,5 +1,11 @@
 import type { Logger } from '../core/Logger.ts';
-import type { GameSettings, GraphicsTier, LanguageMode, SaveSlotMeta } from '../types.ts';
+import type {
+  GameSettings,
+  GraphicsTier,
+  LanguageMode,
+  SaveSlotMeta,
+  TimeOfDayPreset,
+} from '../types.ts';
 
 export const PERSISTENCE_SCHEMA_VERSION = 1;
 const DB_NAME = 'gta_kozhikode_db';
@@ -12,8 +18,13 @@ export function createDefaultSettings(): GameSettings {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
     graphicsTier: 'medium',
     pixelRatioCap: 1.5,
+    adaptiveResolution: true,
+    timeOfDayPreset: 'golden',
     masterMuted: false,
     masterVolume: 0.8,
+    musicVolume: 0.72,
+    sfxVolume: 0.85,
+    ambientVolume: 0.78,
     language: 'mixed',
     touchSensitivity: 1.0,
     hudOpacity: 0.85,
@@ -29,6 +40,7 @@ export function sanitizeSettings(raw: Partial<GameSettings> | null | undefined):
   }
   const validTiers: GraphicsTier[] = ['low', 'medium', 'high', 'ultra'];
   const validLangs: LanguageMode[] = ['en', 'ml', 'mixed'];
+  const validTimes: TimeOfDayPreset[] = ['dawn', 'noon', 'golden', 'night', 'cycle'];
 
   return {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
@@ -39,11 +51,30 @@ export function sanitizeSettings(raw: Partial<GameSettings> | null | undefined):
       typeof raw.pixelRatioCap === 'number' && Number.isFinite(raw.pixelRatioCap)
         ? Math.max(0.75, Math.min(2.0, raw.pixelRatioCap))
         : defaults.pixelRatioCap,
+    adaptiveResolution:
+      typeof raw.adaptiveResolution === 'boolean'
+        ? raw.adaptiveResolution
+        : defaults.adaptiveResolution,
+    timeOfDayPreset: validTimes.includes(raw.timeOfDayPreset as TimeOfDayPreset)
+      ? (raw.timeOfDayPreset as TimeOfDayPreset)
+      : defaults.timeOfDayPreset,
     masterMuted: typeof raw.masterMuted === 'boolean' ? raw.masterMuted : defaults.masterMuted,
     masterVolume:
       typeof raw.masterVolume === 'number' && Number.isFinite(raw.masterVolume)
         ? Math.max(0, Math.min(1, raw.masterVolume))
         : defaults.masterVolume,
+    musicVolume:
+      typeof raw.musicVolume === 'number' && Number.isFinite(raw.musicVolume)
+        ? Math.max(0, Math.min(1, raw.musicVolume))
+        : defaults.musicVolume,
+    sfxVolume:
+      typeof raw.sfxVolume === 'number' && Number.isFinite(raw.sfxVolume)
+        ? Math.max(0, Math.min(1, raw.sfxVolume))
+        : defaults.sfxVolume,
+    ambientVolume:
+      typeof raw.ambientVolume === 'number' && Number.isFinite(raw.ambientVolume)
+        ? Math.max(0, Math.min(1, raw.ambientVolume))
+        : defaults.ambientVolume,
     language: validLangs.includes(raw.language as LanguageMode)
       ? (raw.language as LanguageMode)
       : defaults.language,

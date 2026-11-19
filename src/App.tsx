@@ -2,9 +2,12 @@ import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { GameEngine } from './engine/GameEngine.ts';
 import { createDefaultSettings } from './engine/persistence/IndexedDBStorage.ts';
 import type { EngineHudSnapshot, GameSettings } from './engine/types.ts';
+import { KOZHIKODE_GAZETTEER_PLACES } from './engine/world/KozhikodeGazetteer.ts';
+import { KOZHIKODE_REGIONS } from './engine/world/KozhikodeGeography.ts';
 import { HudOverlay } from './ui/HudOverlay.tsx';
 import { PauseDiagnosticsModal } from './ui/PauseDiagnosticsModal.tsx';
 import { TitleScreen } from './ui/TitleScreen.tsx';
+import { WorldMapModal } from './ui/WorldMapModal.tsx';
 
 class EngineErrorBoundary extends Component<
   { children: ReactNode },
@@ -41,9 +44,35 @@ const INITIAL_SNAPSHOT: EngineHudSnapshot = {
   cameraYaw: -Math.PI * 0.35,
   playerX: 22.5,
   playerZ: 2.5,
+  playerLat: 11.2544,
+  playerLon: 75.78,
   playerHeading: -Math.PI * 0.35,
   isMoving: false,
   isSprinting: false,
+  districtName: 'Mananchira Square',
+  talukName: 'Kozhikode Taluk',
+  biome: 'urban',
+  clockFormatted: '17:36',
+  activeChunks: 1,
+  totalRegions: KOZHIKODE_REGIONS.length,
+  gazetteerCount: KOZHIKODE_GAZETTEER_PLACES.length,
+  nearHome: false,
+  homeDistanceMeters: 141,
+  activeDestination: null,
+  audio: {
+    unlocked: false,
+    suspended: false,
+    muted: false,
+    masterVolume: 0.8,
+    musicVolume: 0.72,
+    sfxVolume: 0.85,
+    ambientVolume: 0.78,
+    activeMusicContext: 'menu',
+    activeMusicLabel: 'Malabar Dusk Overdrive',
+    activeAmbienceLabel: 'Kozhikode City Breeze',
+    cachedBuffers: 0,
+    positionalSources: 0,
+  },
   showDebugGrid: false,
   activeSlotId: 'slot_auto_phase1',
   storageMode: 'indexeddb',
@@ -72,6 +101,7 @@ function GameShell() {
   const [snapshot, setSnapshot] = useState<EngineHudSnapshot>(INITIAL_SNAPSHOT);
   const [modalInitialTab, setModalInitialTab] = useState<'pause' | 'settings'>('pause');
   const [showModal, setShowModal] = useState(false);
+  const [showWorldMap, setShowWorldMap] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -121,7 +151,7 @@ function GameShell() {
   }, [snapshot.mode, showModal]);
 
   const handleManualSave = async () => {
-    const saved = await engineRef.current?.saveCheckpoint('slot_manual_1', 'Mananchira Promenade');
+    const saved = await engineRef.current?.saveCheckpoint('slot_manual_1');
     if (saved) {
       setSaveToast('Game Saved');
       window.setTimeout(() => setSaveToast(null), 2000);
@@ -137,6 +167,8 @@ function GameShell() {
         <TitleScreen
           isBooting={snapshot.mode === 'booting'}
           hasSavedSlot={snapshot.slots.length > 0}
+          settings={snapshot.settings}
+          audio={snapshot.audio}
           onContinue={() => engineRef.current?.startPlay(false)}
           onNewGame={() => {
             engineRef.current?.startPlay(true);
@@ -145,15 +177,44 @@ function GameShell() {
             setModalInitialTab('settings');
             setShowModal(true);
           }}
+          onUpdateSettings={(patch: Partial<GameSettings>) => {
+            void engineRef.current?.updateSettings(patch);
+          }}
+          onToggleMute={() => {
+            engineRef.current?.toggleMute();
+          }}
+          onUiClick={() => {
+            engineRef.current?.audio.playUiSound('ui_click');
+          }}
         />
       )}
 
-      {(snapshot.mode === 'playing' || snapshot.mode === 'paused') && (
+      {(snapshot.mode === 'playing' || snapshot.mode === 'paused') && !showWorldMap && (
         <HudOverlay
           snapshot={snapshot}
           onPause={() => engineRef.current?.togglePause()}
+          onToggleCamera={() => engineRef.current?.toggleCameraMode()}
+          onToggleMute={() => engineRef.current?.toggleMute()}
+          onUpdateSettings={(patch: Partial<GameSettings>) => {
+            void engineRef.current?.updateSettings(patch);
+          }}
+          onHomeInteract={() => engineRef.current?.playHomeDoorPreview()}
+          onOpenWorldMap={() => setShowWorldMap(true)}
+          onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
+          onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
           onVirtualMove={(x, y) => engineRef.current?.input.setVirtualAxes(x, y)}
           onSprintHold={(held) => engineRef.current?.input.triggerAction('sprint', held)}
+        />
+      )}
+
+      {showWorldMap && (
+        <WorldMapModal
+          snapshot={snapshot}
+          onClose={() => setShowWorldMap(false)}
+          onTravelToWorld={(x, z, heading) => engineRef.current?.travelToWorldPoint(x, z, heading)}
+          onSetDestination={(dest) => engineRef.current?.setDestinationWaypoint(dest)}
+          onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
+          onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
         />
       )}
 
@@ -181,6 +242,15 @@ function GameShell() {
             setShowModal(false);
             engineRef.current?.returnToTitle();
           }}
+          onTravelHome={() => {
+            setShowModal(false);
+            engineRef.current?.travelToWestHillHome();
+          }}
+          onTravelMananchira={() => {
+            setShowModal(false);
+            engineRef.current?.travelToMananchira();
+          }}
+          onToggleMute={() => engineRef.current?.toggleMute()}
           onUpdateSettings={(patch: Partial<GameSettings>) => {
             void engineRef.current?.updateSettings(patch);
           }}
@@ -238,9 +308,32 @@ function GameShell() {
 }
 
 export default function App() {
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => setQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', handleQuotaExceeded);
+    return () => window.removeEventListener('gmp-quota-exceeded', handleQuotaExceeded);
+  }, []);
+
   return (
-    <EngineErrorBoundary>
-      <GameShell />
-    </EngineErrorBoundary>
+    <>
+      {quotaExceeded && (
+        <div
+          role="alert"
+          className="sticky top-0 z-50 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm"
+        >
+          <p className="font-semibold">Shared Demo Key Quota Exceeded</p>
+          <p className="mt-1">
+            The free shared Google Maps Demo API key has reached its daily quota limit. To restore full
+            map features immediately, please connect your own Google Cloud project with billing enabled or
+            try again tomorrow.
+          </p>
+        </div>
+      )}
+      <EngineErrorBoundary>
+        <GameShell />
+      </EngineErrorBoundary>
+    </>
   );
 }

@@ -1,20 +1,36 @@
-import { Play, RotateCcw, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { Play, RotateCcw, Settings, Volume2, VolumeX } from 'lucide-react';
+import type { AudioStateSnapshot } from '../engine/audio/AudioTypes.ts';
+import type { GameSettings } from '../engine/types.ts';
+import { BottomAudioPanel } from './BottomAudioPanel.tsx';
 
 interface TitleScreenProps {
   isBooting: boolean;
   hasSavedSlot: boolean;
+  settings: GameSettings;
+  audio: AudioStateSnapshot;
   onContinue: () => void;
   onNewGame: () => void;
   onOpenSettings: () => void;
+  onUpdateSettings: (patch: Partial<GameSettings>) => void;
+  onToggleMute: () => void;
+  onUiClick: () => void;
 }
 
 export function TitleScreen({
   isBooting,
   hasSavedSlot,
+  settings,
+  audio,
   onContinue,
   onNewGame,
   onOpenSettings,
+  onUpdateSettings,
+  onToggleMute,
+  onUiClick,
 }: TitleScreenProps) {
+  const [showAudioPanel, setShowAudioPanel] = useState(false);
+
   if (isBooting) {
     return (
       <div className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950 p-6 text-slate-100">
@@ -35,19 +51,29 @@ export function TitleScreen({
         <div className="mt-5 h-1.5 w-56 overflow-hidden rounded-full bg-slate-800">
           <div className="h-full w-2/3 rounded-full bg-amber-500" />
         </div>
-        <p className="mt-3 text-xs tracking-wider text-slate-400">Loading Mananchira &amp; Beach Core...</p>
+        <p className="mt-3 text-xs tracking-wider text-slate-400">Loading Mananchira &amp; Kozhikode Coast...</p>
       </div>
     );
   }
 
+  const effectiveMasterPct = settings.masterMuted ? 0 : Math.round(settings.masterVolume * 100);
+
   return (
-    <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-5 sm:p-10">
+    <div
+      className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-4 sm:p-10"
+      style={{
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
+      }}
+    >
       {/* Upper-Left Clean Title Lockup & Main Menu */}
       <div className="pointer-events-auto max-w-xs sm:max-w-sm">
-        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-6">
+        <div className="rounded-2xl border border-white/15 bg-slate-950/78 p-5 shadow-2xl sm:p-6">
           <svg
             viewBox="0 0 320 62"
-            className="h-12 w-auto sm:h-14"
+            className="h-11 w-auto sm:h-14"
             role="img"
             aria-label="GTA Kozhikode"
           >
@@ -64,7 +90,7 @@ export function TitleScreen({
             </text>
           </svg>
 
-          <div className="mt-5 flex flex-col gap-2.5">
+          <div className="mt-4 flex flex-col gap-2.5">
             {hasSavedSlot && (
               <button
                 type="button"
@@ -91,23 +117,71 @@ export function TitleScreen({
 
             <button
               type="button"
-              onClick={onOpenSettings}
-              className="flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-slate-900/80 px-5 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-800"
+              onClick={() => {
+                onUiClick();
+                onOpenSettings();
+              }}
+              className="flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-slate-900/85 px-5 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-800"
             >
               <Settings className="h-4 w-4" />
-              <span>Settings</span>
+              <span>Settings &amp; Audio</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Bottom Quiet Control Hint & OpenStreetMap ODbL Attribution */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200/90">
-        <div className="rounded-lg bg-slate-950/65 px-3.5 py-2">
-          Drag to Look · Virtual Joystick or WASD to Explore
-        </div>
-        <div className="rounded-lg bg-slate-950/65 px-3 py-2 text-[11px] text-slate-400">
-          Kozhikode Geo-Architecture · OpenStreetMap ODbL
+      {/* Bottom Controls Hint, Attribution & Bottom Sound Control */}
+      <div className="flex flex-col items-end gap-2">
+        {showAudioPanel && (
+          <BottomAudioPanel
+            settings={settings}
+            audio={audio}
+            onUpdateSettings={onUpdateSettings}
+            onToggleMute={onToggleMute}
+            onClose={() => {
+              onUiClick();
+              setShowAudioPanel(false);
+            }}
+          />
+        )}
+
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs text-slate-200/90">
+          <div className="rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2">
+            Drag to Look · Joystick or WASD to Move
+          </div>
+
+          <div className="pointer-events-auto flex items-center gap-2">
+            <div className="hidden rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2 text-[11px] text-slate-400 sm:block">
+              Kozhikode Geo-Architecture · OpenStreetMap ODbL
+            </div>
+
+            <button
+              type="button"
+              data-hud-control="true"
+              onClick={() => {
+                onUiClick();
+                setShowAudioPanel((prev) => !prev);
+              }}
+              aria-label="Title Screen Audio Settings"
+              aria-expanded={showAudioPanel}
+              className={`flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 shadow-lg transition-colors ${
+                settings.masterMuted
+                  ? 'border-rose-400/50 bg-slate-950/90 text-rose-300'
+                  : showAudioPanel
+                    ? 'border-amber-400 bg-amber-500 text-slate-950'
+                    : 'border-white/25 bg-slate-950/88 text-white hover:bg-slate-800'
+              }`}
+            >
+              {settings.masterMuted ? (
+                <VolumeX className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+              ) : (
+                <Volume2 className="h-4 w-4 shrink-0" strokeWidth={2.2} />
+              )}
+              <span className="font-mono-tabular text-xs font-bold">
+                {settings.masterMuted ? 'MUTE' : `${effectiveMasterPct}%`}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
