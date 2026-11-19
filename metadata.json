@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "GTA Kozhikode",
+  "description": "An original, realistic, open-world Kerala city simulation set in modern-day Kozhikode, built for mobile and desktop browsers with Three.js, WebGL2, and offline-first IndexedDB persistence.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
