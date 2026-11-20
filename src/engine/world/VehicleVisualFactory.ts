@@ -418,6 +418,7 @@ function addCylPart(
 
 function buildWheel(radius: number, width: number): THREE.Group {
   const wheel = new THREE.Group();
+  wheel.rotation.order = 'YXZ';
   const tire = new THREE.Mesh(unitCylGeo, sharedMaterials.tireMat);
   tire.scale.set(radius * 2, width, radius * 2);
   tire.rotation.z = Math.PI / 2;
@@ -429,8 +430,14 @@ function buildWheel(radius: number, width: number): THREE.Group {
   return wheel;
 }
 
-function addSeatedRider(parent: THREE.Object3D, seatY: number, seatZ: number, leanForward = 0.14): void {
+function addSeatedRider(
+  parent: THREE.Object3D,
+  seatY: number,
+  seatZ: number,
+  leanForward = 0.14,
+): THREE.Group {
   const rider = new THREE.Group();
+  rider.name = 'npc_driver';
   rider.position.set(0, seatY, seatZ);
   addPart(rider, sharedMaterials.blackTrimMat, 0.28, 0.38, 0.18, 0, 0.04, 0.14, -0.85, 0, 0, false);
   const torso = addPart(rider, sharedMaterials.riderShirtMat, 0.38, 0.48, 0.22, 0, 0.3, 0.04, leanForward, 0, 0, true);
@@ -444,6 +451,7 @@ function addSeatedRider(parent: THREE.Object3D, seatY: number, seatZ: number, le
   head.position.set(0, 0.66, 0.08 + leanForward * 0.25);
   rider.add(head);
   parent.add(rider);
+  return rider;
 }
 
 function wrapWithLod(
@@ -452,6 +460,12 @@ function wrapWithLod(
   proxyColor: number,
   lodMidDist = 90,
   wheels: THREE.Object3D[] = [],
+  metaExtras?: {
+    modelId?: VehicleModelId;
+    colorHex?: number;
+    frontWheels?: THREE.Object3D[];
+    npcDriverGroup?: THREE.Group | null;
+  },
 ): THREE.LOD {
   const lod = new THREE.LOD();
   lod.addLevel(detailed, 0);
@@ -461,6 +475,11 @@ function wrapWithLod(
   proxy.position.y = proxySize[1] * 0.5;
   lod.addLevel(proxy, lodMidDist);
   lod.userData.wheels = wheels;
+  lod.userData.frontWheels = metaExtras?.frontWheels ?? [];
+  lod.userData.bodyGroup = detailed;
+  lod.userData.modelId = metaExtras?.modelId;
+  lod.userData.colorHex = metaExtras?.colorHex ?? proxyColor;
+  lod.userData.npcDriverGroup = metaExtras?.npcDriverGroup ?? null;
   return lod;
 }
 
@@ -604,7 +623,11 @@ function buildHatchbackOrSuv(
     wheels.push(w);
   }
 
-  return wrapWithLod(car, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels);
+  return wrapWithLod(car, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels, {
+    modelId,
+    colorHex,
+    frontWheels: wheels.slice(0, 2),
+  });
 }
 
 function buildTwoWheeler(
@@ -618,6 +641,7 @@ function buildTwoWheeler(
   const bike = new THREE.Group();
   const bodyMat = getBodyPaintMat(colorHex);
   const wheels: THREE.Object3D[] = [];
+  let npcDriverGroup: THREE.Group | null = null;
 
   if (modelId === 'suzuki_access_125' || modelId === 'honda_activa') {
     const isAccess = modelId === 'suzuki_access_125';
@@ -651,7 +675,7 @@ function buildTwoWheeler(
     rw.position.set(0, 0.21, -0.52);
     bike.add(fw, rw);
     wheels.push(fw, rw);
-    if (withDriver) addSeatedRider(bike, 0.84, -0.22, 0.12);
+    if (withDriver) npcDriverGroup = addSeatedRider(bike, 0.84, -0.22, 0.12);
   } else {
     const isEnfield = modelId === 'royal_enfield';
     const isYamaha = modelId === 'yamaha_fz';
@@ -721,10 +745,15 @@ function buildTwoWheeler(
     rw.position.set(0, meta.wheelRadius, -0.64);
     bike.add(fw, rw);
     wheels.push(fw, rw);
-    if (withDriver) addSeatedRider(bike, 0.83, -0.24, isYamaha ? 0.28 : 0.14);
+    if (withDriver) npcDriverGroup = addSeatedRider(bike, 0.83, -0.24, isYamaha ? 0.28 : 0.14);
   }
 
-  return wrapWithLod(bike, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels);
+  return wrapWithLod(bike, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels, {
+    modelId,
+    colorHex,
+    frontWheels: wheels.slice(0, 1),
+    npcDriverGroup,
+  });
 }
 
 function buildBusOrCommercial(
@@ -757,7 +786,8 @@ function buildBusOrCommercial(
     plate.position.set(0, 0.38, 1.43);
     auto.add(plate);
 
-    if (withDriver) addSeatedRider(auto, 0.62, 0.42, 0.06);
+    let npcDriverGroup: THREE.Group | null = null;
+    if (withDriver) npcDriverGroup = addSeatedRider(auto, 0.62, 0.42, 0.06);
 
     const fw = buildWheel(0.24, 0.14);
     fw.position.set(0, 0.24, 1.15);
@@ -767,7 +797,12 @@ function buildBusOrCommercial(
     rr.position.set(0.62, 0.24, -0.68);
     auto.add(fw, rl, rr);
     wheels.push(fw, rl, rr);
-    return wrapWithLod(auto, [meta.width, meta.height, meta.length], 0xf59e0b, lodDist, wheels);
+    return wrapWithLod(auto, [meta.width, meta.height, meta.length], 0xf59e0b, lodDist, wheels, {
+      modelId,
+      colorHex: 0xf59e0b,
+      frontWheels: [fw],
+      npcDriverGroup,
+    });
   }
 
   if (modelId === 'ksrtc_bus' || modelId === 'kerala_private_bus') {
@@ -815,7 +850,11 @@ function buildBusOrCommercial(
       bus.add(w);
       wheels.push(w);
     }
-    return wrapWithLod(bus, [meta.width, meta.height, meta.length], isKsrtc ? 0xb91c1c : colorHex, lodDist, wheels);
+    return wrapWithLod(bus, [meta.width, meta.height, meta.length], isKsrtc ? 0xb91c1c : colorHex, lodDist, wheels, {
+      modelId,
+      colorHex: isKsrtc ? 0xb91c1c : colorHex,
+      frontWheels: wheels.slice(0, 2),
+    });
   }
 
   if (modelId === 'delivery_van') {
@@ -834,7 +873,11 @@ function buildBusOrCommercial(
       van.add(w);
       wheels.push(w);
     }
-    return wrapWithLod(van, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels);
+    return wrapWithLod(van, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels, {
+      modelId,
+      colorHex,
+      frontWheels: wheels.slice(0, 2),
+    });
   }
 
   // Indian Goods Carrier Lorry (goods_truck)
@@ -857,7 +900,11 @@ function buildBusOrCommercial(
     truck.add(w);
     wheels.push(w);
   }
-  return wrapWithLod(truck, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels);
+  return wrapWithLod(truck, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels, {
+    modelId,
+    colorHex,
+    frontWheels: wheels.slice(0, 2),
+  });
 }
 
 export function createVehicleModelLOD(

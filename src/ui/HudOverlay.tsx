@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Armchair,
+  ArrowDown,
   ArrowUp,
+  Bike,
   Camera,
+  Car,
   CloudSun,
   Coffee,
   DoorOpen,
+  Gauge,
   Hand,
   Home,
+  LogOut,
   Map as MapIcon,
   MapPin,
   MessageCircle,
@@ -34,6 +39,13 @@ import {
 } from '../engine/world/KozhikodeGeography.ts';
 import { BottomAudioPanel } from './BottomAudioPanel.tsx';
 
+export interface VirtualVehicleControlsPatch {
+  steer?: number;
+  throttle?: number;
+  brakeReverse?: number;
+  handbrake?: boolean;
+}
+
 interface HudOverlayProps {
   snapshot: EngineHudSnapshot;
   onPause: () => void;
@@ -43,6 +55,10 @@ interface HudOverlayProps {
   onUpdateSettings: (patch: Partial<GameSettings>) => void;
   onHomeInteract: () => void;
   onBuildingInteract?: () => string | void;
+  onEnterVehicle?: () => boolean;
+  onExitVehicle?: () => boolean;
+  onVehicleControls?: (patch: VirtualVehicleControlsPatch) => void;
+  onVehicleHorn?: () => void;
   onOpenWorldMap: () => void;
   onClearDestination: () => void;
   onUiClick: () => void;
@@ -51,8 +67,16 @@ interface HudOverlayProps {
   onJumpTap?: () => void;
 }
 
-function renderInteractionIcon(kind: InteractionActionKind) {
+function renderInteractionIcon(kind: InteractionActionKind, vehicleCategory?: string) {
   switch (kind) {
+    case 'enter_vehicle':
+      return vehicleCategory === 'scooter' || vehicleCategory === 'motorcycle' ? (
+        <Bike className="h-5 w-5" strokeWidth={2.2} />
+      ) : (
+        <Car className="h-5 w-5" strokeWidth={2.2} />
+      );
+    case 'exit_vehicle':
+      return <LogOut className="h-5 w-5" strokeWidth={2.2} />;
     case 'enter_house':
       return <Home className="h-5 w-5" strokeWidth={2.2} />;
     case 'drink_tea':
@@ -79,6 +103,10 @@ export function HudOverlay({
   onUpdateSettings,
   onHomeInteract,
   onBuildingInteract,
+  onEnterVehicle,
+  onExitVehicle,
+  onVehicleControls,
+  onVehicleHorn,
   onOpenWorldMap,
   onClearDestination,
   onUiClick,
@@ -88,20 +116,38 @@ export function HudOverlay({
 }: HudOverlayProps) {
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
+  const steerBaseRef = useRef<HTMLDivElement | null>(null);
   const joystickPointerIdRef = useRef<number | null>(null);
   const sprintPointerIdRef = useRef<number | null>(null);
   const jumpPointerIdRef = useRef<number | null>(null);
+
+  const steerPointerIdRef = useRef<number | null>(null);
+  const gasPointerIdRef = useRef<number | null>(null);
+  const brakePointerIdRef = useRef<number | null>(null);
+  const handbrakePointerIdRef = useRef<number | null>(null);
+
   const onVirtualMoveRef = useRef(onVirtualMove);
   const onSprintHoldRef = useRef(onSprintHold);
+  const onVehicleControlsRef = useRef(onVehicleControls);
   onVirtualMoveRef.current = onVirtualMove;
   onSprintHoldRef.current = onSprintHold;
+  onVehicleControlsRef.current = onVehicleControls;
 
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [joystickActive, setJoystickActive] = useState(false);
   const [jumpPressed, setJumpPressed] = useState(false);
+
+  const [steerKnobX, setSteerKnobX] = useState(0);
+  const [steerActive, setSteerActive] = useState(false);
+  const [gasPressed, setGasPressed] = useState(false);
+  const [brakePressed, setBrakePressed] = useState(false);
+  const [handbrakePressed, setHandbrakePressed] = useState(false);
+
   const [showAudioDrawer, setShowAudioDrawer] = useState(false);
   const [hudNotice, setHudNotice] = useState<string | null>(null);
   const [showPortraitNotice, setShowPortraitNotice] = useState(false);
+
+  const isDriving = Boolean(snapshot.vehicle?.isDriving);
 
   const showTimedNotice = (msg: string) => {
     setHudNotice(msg);
@@ -154,6 +200,28 @@ export function HudOverlay({
         jumpPointerIdRef.current = null;
         setJumpPressed(false);
       }
+      if (
+        steerPointerIdRef.current !== null ||
+        gasPointerIdRef.current !== null ||
+        brakePointerIdRef.current !== null ||
+        handbrakePointerIdRef.current !== null
+      ) {
+        steerPointerIdRef.current = null;
+        gasPointerIdRef.current = null;
+        brakePointerIdRef.current = null;
+        handbrakePointerIdRef.current = null;
+        setSteerKnobX(0);
+        setSteerActive(false);
+        setGasPressed(false);
+        setBrakePressed(false);
+        setHandbrakePressed(false);
+        onVehicleControlsRef.current?.({
+          steer: 0,
+          throttle: 0,
+          brakeReverse: 0,
+          handbrake: false,
+        });
+      }
     };
 
     const handleVisibility = () => {
@@ -172,6 +240,33 @@ export function HudOverlay({
       resetAllHudTouch();
     };
   }, []);
+
+  useEffect(() => {
+    // Switching cleanly between on-foot and driving modes drops prior pointer latches immediately
+    joystickPointerIdRef.current = null;
+    sprintPointerIdRef.current = null;
+    jumpPointerIdRef.current = null;
+    steerPointerIdRef.current = null;
+    gasPointerIdRef.current = null;
+    brakePointerIdRef.current = null;
+    handbrakePointerIdRef.current = null;
+    setJoystickActive(false);
+    setKnobOffset({ x: 0, y: 0 });
+    setJumpPressed(false);
+    setSteerActive(false);
+    setSteerKnobX(0);
+    setGasPressed(false);
+    setBrakePressed(false);
+    setHandbrakePressed(false);
+    onVirtualMoveRef.current(0, 0);
+    onSprintHoldRef.current(false);
+    onVehicleControlsRef.current?.({
+      steer: 0,
+      throttle: 0,
+      brakeReverse: 0,
+      handbrake: false,
+    });
+  }, [isDriving]);
 
   useEffect(() => {
     const canvas = minimapRef.current;
@@ -337,6 +432,51 @@ export function HudOverlay({
     setJumpPressed(false);
   };
 
+  const updateSteerJoystick = (clientX: number) => {
+    const base = steerBaseRef.current;
+    if (!base) return;
+    const rect = base.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const maxRadius = Math.max(1, rect.width * 0.36);
+    const rawDx = clientX - centerX;
+    const clampedDx = Math.max(-maxRadius, Math.min(maxRadius, rawDx));
+    setSteerKnobX(clampedDx);
+    const norm = clampedDx / maxRadius;
+    if (Math.abs(norm) < deadzone) {
+      onVehicleControls?.({ steer: 0 });
+      return;
+    }
+    const rescaled =
+      Math.sign(norm) *
+      Math.min(1, ((Math.abs(norm) - deadzone) / Math.max(0.01, 1 - deadzone)) * joystickSens);
+    onVehicleControls?.({ steer: rescaled });
+  };
+
+  const resetSteerJoystick = () => {
+    steerPointerIdRef.current = null;
+    setSteerActive(false);
+    setSteerKnobX(0);
+    onVehicleControls?.({ steer: 0 });
+  };
+
+  const releaseGas = () => {
+    gasPointerIdRef.current = null;
+    setGasPressed(false);
+    onVehicleControls?.({ throttle: 0 });
+  };
+
+  const releaseBrake = () => {
+    brakePointerIdRef.current = null;
+    setBrakePressed(false);
+    onVehicleControls?.({ brakeReverse: 0 });
+  };
+
+  const releaseHandbrake = () => {
+    handbrakePointerIdRef.current = null;
+    setHandbrakePressed(false);
+    onVehicleControls?.({ handbrake: false });
+  };
+
   // Compute Home icon marker coordinates on circular minimap
   const relHomeX = (PROTAGONIST_HOME_COORDS.houseX - snapshot.playerX) * 0.44;
   const relHomeZ = (PROTAGONIST_HOME_COORDS.houseZ - snapshot.playerZ) * 0.44;
@@ -384,12 +524,17 @@ export function HudOverlay({
           nearbyBuilding: snapshot.nearbyBuilding ?? null,
           nearHome: snapshot.nearHome,
           homeDistanceMeters: snapshot.homeDistanceMeters,
+          isDriving,
         });
 
   const isAirborne = snapshot.isGrounded === false;
 
   const handleContextInteract = () => {
     if (!resolvedInteraction) return;
+    if (resolvedInteraction.kind === 'enter_vehicle') {
+      onEnterVehicle?.();
+      return;
+    }
     if (snapshot.nearbyBuilding || resolvedInteraction.kind === 'talk') {
       const customNotice = onBuildingInteract?.();
       if (customNotice) {
@@ -405,6 +550,8 @@ export function HudOverlay({
   const knobDiameter = Math.round(joystickDiameter * 0.42);
   const actionBtnPx = Math.round((isCompact ? 42 : 46) * btnScale);
   const primaryBtnPx = Math.round((isCompact ? 48 : 54) * btnScale);
+  const steerPadWidth = Math.round((isCompact ? 116 : 134) * joyScale);
+  const steerPadHeight = Math.round((isCompact ? 62 : 70) * joyScale);
 
   const joystickCluster = (
     <div
@@ -628,6 +775,275 @@ export function HudOverlay({
     </div>
   );
 
+  const activeVehicle = snapshot.vehicle;
+  const drivingSteerCluster = (
+    <div
+      className="pointer-events-none relative shrink-0"
+      style={{
+        transform: `translate3d(${offsets.joystickX}px, ${offsets.joystickY}px, 0)`,
+      }}
+    >
+      <div
+        ref={steerBaseRef}
+        data-hud-control="true"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          if (steerPointerIdRef.current !== null) return;
+          steerPointerIdRef.current = e.pointerId;
+          setSteerActive(true);
+          try {
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+          } catch {
+            // Ignore synthetic pointer capture errors
+          }
+          updateSteerJoystick(e.clientX);
+        }}
+        onPointerMove={(e) => {
+          if (steerPointerIdRef.current !== e.pointerId) return;
+          updateSteerJoystick(e.clientX);
+        }}
+        onPointerUp={(e) => {
+          if (steerPointerIdRef.current !== e.pointerId) return;
+          resetSteerJoystick();
+        }}
+        onPointerCancel={(e) => {
+          if (steerPointerIdRef.current !== e.pointerId) return;
+          resetSteerJoystick();
+        }}
+        onLostPointerCapture={(e) => {
+          if (steerPointerIdRef.current !== e.pointerId) return;
+          resetSteerJoystick();
+        }}
+        role="slider"
+        aria-label="Vehicle Steering"
+        aria-valuenow={Math.round((activeVehicle?.steerNorm ?? 0) * 100)}
+        style={{
+          width: `${steerPadWidth}px`,
+          height: `${steerPadHeight}px`,
+        }}
+        className={`pointer-events-auto relative flex touch-none select-none items-center justify-between rounded-full border px-3 transition-colors ${
+          steerActive
+            ? 'border-amber-400/80 bg-slate-950/75'
+            : 'border-white/25 bg-slate-950/55'
+        }`}
+      >
+        <span className="pointer-events-none text-[10px] font-bold tracking-wider text-slate-400">L</span>
+        <div
+          style={{
+            width: `${Math.round(steerPadHeight * 0.68)}px`,
+            height: `${Math.round(steerPadHeight * 0.68)}px`,
+            transform: `translate3d(${steerKnobX}px, 0, 0)`,
+          }}
+          className={`pointer-events-none rounded-full border shadow-md transition-colors ${
+            steerActive
+              ? 'border-amber-300/85 bg-amber-400/50'
+              : 'border-white/45 bg-white/30'
+          }`}
+        />
+        <span className="pointer-events-none text-[10px] font-bold tracking-wider text-slate-400">R</span>
+      </div>
+    </div>
+  );
+
+  const drivingPedalCluster = (
+    <div
+      className={`pointer-events-auto flex shrink-0 flex-col ${
+        isLeftHanded ? 'items-start' : 'items-end'
+      } gap-2 pb-0.5`}
+      style={{
+        transform: `translate3d(${offsets.actionsX}px, ${offsets.actionsY}px, 0)`,
+      }}
+    >
+      {/* Top utility row: Exit Vehicle, Camera Chase Preset, Horn */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => {
+            onUiClick();
+            onExitVehicle?.();
+          }}
+          aria-label="Exit Vehicle"
+          style={{ minHeight: `${Math.round(actionBtnPx * 0.9)}px` }}
+          className="flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-amber-500 px-3 text-xs font-bold text-slate-950 shadow-lg transition-transform active:scale-95"
+        >
+          <LogOut className="h-4 w-4" strokeWidth={2.3} />
+          <span>Exit</span>
+        </button>
+
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => {
+            onUiClick();
+            onVehicleHorn?.();
+          }}
+          aria-label="Vehicle Horn"
+          style={{
+            width: `${actionBtnPx}px`,
+            height: `${actionBtnPx}px`,
+          }}
+          className="flex items-center justify-center rounded-full border border-white/25 bg-slate-950/85 text-amber-300 shadow-lg transition-transform active:scale-90"
+        >
+          <Volume2 className="h-4 w-4" strokeWidth={2.2} />
+        </button>
+
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onToggleCamera}
+          aria-label="Toggle Vehicle Chase Camera"
+          style={{
+            width: `${actionBtnPx}px`,
+            height: `${actionBtnPx}px`,
+          }}
+          className="relative flex items-center justify-center rounded-full border border-white/25 bg-slate-950/85 text-white shadow-lg transition-transform active:scale-90"
+        >
+          <Camera className="h-4 w-4" strokeWidth={2} />
+          {snapshot.cameraPreset && (
+            <span className="pointer-events-none absolute -bottom-1 rounded bg-slate-900/95 px-1 font-mono-tabular text-[8px] font-bold uppercase tracking-tight text-amber-300">
+              {snapshot.cameraPreset === 'standard' ? 'STD' : snapshot.cameraPreset.toUpperCase()}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Bottom multi-touch driving pedals: Handbrake, Brake/Reverse, Accelerate */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (handbrakePointerIdRef.current !== null) return;
+            handbrakePointerIdRef.current = e.pointerId;
+            setHandbrakePressed(true);
+            try {
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            } catch {
+              // Ignore
+            }
+            onVehicleControls?.({ handbrake: true });
+          }}
+          onPointerUp={(e) => {
+            if (handbrakePointerIdRef.current !== e.pointerId) return;
+            releaseHandbrake();
+          }}
+          onPointerCancel={(e) => {
+            if (handbrakePointerIdRef.current !== e.pointerId) return;
+            releaseHandbrake();
+          }}
+          onLostPointerCapture={(e) => {
+            if (handbrakePointerIdRef.current !== e.pointerId) return;
+            releaseHandbrake();
+          }}
+          aria-label="Handbrake"
+          aria-pressed={handbrakePressed}
+          style={{
+            width: `${actionBtnPx}px`,
+            height: `${actionBtnPx}px`,
+          }}
+          className={`flex touch-none select-none items-center justify-center rounded-full border font-mono-tabular text-[10px] font-extrabold shadow-lg transition-transform active:scale-90 ${
+            handbrakePressed
+              ? 'border-amber-300 bg-amber-500 text-slate-950 scale-95'
+              : 'border-white/25 bg-slate-950/85 text-amber-300'
+          }`}
+        >
+          HB
+        </button>
+
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (brakePointerIdRef.current !== null) return;
+            brakePointerIdRef.current = e.pointerId;
+            setBrakePressed(true);
+            try {
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            } catch {
+              // Ignore
+            }
+            onVehicleControls?.({ brakeReverse: 1 });
+          }}
+          onPointerUp={(e) => {
+            if (brakePointerIdRef.current !== e.pointerId) return;
+            releaseBrake();
+          }}
+          onPointerCancel={(e) => {
+            if (brakePointerIdRef.current !== e.pointerId) return;
+            releaseBrake();
+          }}
+          onLostPointerCapture={(e) => {
+            if (brakePointerIdRef.current !== e.pointerId) return;
+            releaseBrake();
+          }}
+          aria-label="Brake or Reverse"
+          aria-pressed={brakePressed}
+          style={{
+            width: `${actionBtnPx}px`,
+            height: `${primaryBtnPx}px`,
+          }}
+          className={`flex touch-none select-none flex-col items-center justify-center rounded-2xl border shadow-lg transition-transform active:scale-95 ${
+            brakePressed
+              ? 'border-rose-300 bg-rose-500 text-slate-950 scale-95'
+              : 'border-rose-400/50 bg-slate-950/88 text-rose-300'
+          }`}
+        >
+          <ArrowDown className="h-4 w-4" strokeWidth={2.4} />
+          <span className="font-mono-tabular text-[9px] font-bold">REV</span>
+        </button>
+
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (gasPointerIdRef.current !== null) return;
+            gasPointerIdRef.current = e.pointerId;
+            setGasPressed(true);
+            try {
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            } catch {
+              // Ignore
+            }
+            onVehicleControls?.({ throttle: 1 });
+          }}
+          onPointerUp={(e) => {
+            if (gasPointerIdRef.current !== e.pointerId) return;
+            releaseGas();
+          }}
+          onPointerCancel={(e) => {
+            if (gasPointerIdRef.current !== e.pointerId) return;
+            releaseGas();
+          }}
+          onLostPointerCapture={(e) => {
+            if (gasPointerIdRef.current !== e.pointerId) return;
+            releaseGas();
+          }}
+          aria-label="Accelerate"
+          aria-pressed={gasPressed}
+          style={{
+            width: `${primaryBtnPx}px`,
+            height: `${Math.round(primaryBtnPx * 1.15)}px`,
+          }}
+          className={`flex touch-none select-none flex-col items-center justify-center rounded-2xl border shadow-lg transition-transform active:scale-95 ${
+            gasPressed
+              ? 'border-emerald-300 bg-emerald-400 text-slate-950 scale-95'
+              : 'border-emerald-400/60 bg-slate-950/88 text-emerald-300'
+          }`}
+        >
+          <Gauge className="h-5 w-5" strokeWidth={2.2} />
+          <span className="font-mono-tabular text-[9px] font-bold">GAS</span>
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div
       className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4"
@@ -813,7 +1229,7 @@ export function HudOverlay({
             {hudNotice}
           </div>
         )}
-        {resolvedInteraction && (
+        {!isDriving && resolvedInteraction && (
           <div
             aria-label="Nearby Building Marker"
             className="flex items-center gap-2 rounded-xl border border-white/20 bg-slate-950/88 px-3 py-1.5 text-xs text-slate-100 shadow-lg"
@@ -836,11 +1252,17 @@ export function HudOverlay({
         )}
       </div>
 
-      {/* BOTTOM CONTROLS: LEFT JOYSTICK (OR FLIPPED), AUDIO MIXER, RIGHT ACTION CLUSTER */}
+      {/* BOTTOM CONTROLS: AUTOMATICALLY SWITCHES BETWEEN ON-FOOT HUD AND DRIVING HUD */}
       <div className="relative z-10 flex items-end justify-between gap-2">
-        {isLeftHanded ? actionThumbCluster : joystickCluster}
+        {isDriving
+          ? isLeftHanded
+            ? drivingPedalCluster
+            : drivingSteerCluster
+          : isLeftHanded
+            ? actionThumbCluster
+            : joystickCluster}
 
-        {/* Bottom-Center: Dedicated Sound Control & Compact Audio Mixer Popover */}
+        {/* Bottom-Center: Live Vehicle Telemetry (when driving) + Sound Mixer Toggle */}
         <div className="pointer-events-none flex flex-col items-center gap-2 pb-0.5">
           {showAudioDrawer && (
             <BottomAudioPanel
@@ -853,6 +1275,55 @@ export function HudOverlay({
                 setShowAudioDrawer(false);
               }}
             />
+          )}
+
+          {isDriving && activeVehicle && (
+            <div
+              aria-label="Vehicle Telemetry"
+              className="flex items-center gap-2.5 rounded-xl border border-white/20 bg-slate-950/88 px-3 py-1.5 shadow-xl"
+            >
+              <div className="flex flex-col">
+                <span className="max-w-[140px] truncate text-[11px] font-semibold text-slate-200">
+                  {activeVehicle.displayName}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`rounded px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold ${
+                      activeVehicle.gear === 'REVERSE'
+                        ? 'bg-rose-500/25 text-rose-300'
+                        : activeVehicle.gear === 'BRAKE' || activeVehicle.gear === 'HANDBRAKE'
+                          ? 'bg-amber-500/25 text-amber-300'
+                          : activeVehicle.gear === 'DRIVE'
+                            ? 'bg-emerald-500/25 text-emerald-300'
+                            : 'bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {activeVehicle.gear}
+                  </span>
+                  {activeVehicle.damageState !== 'undamaged' && (
+                    <span
+                      className={`rounded px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold uppercase ${
+                        activeVehicle.damageState === 'severe'
+                          ? 'bg-rose-500/30 text-rose-300'
+                          : activeVehicle.damageState === 'moderate'
+                            ? 'bg-amber-500/30 text-amber-300'
+                            : 'bg-sky-500/25 text-sky-200'
+                      }`}
+                    >
+                      {activeVehicle.damageState}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-baseline gap-0.5 border-l border-white/15 pl-2.5">
+                <span className="font-mono-tabular text-xl font-extrabold leading-none text-amber-300">
+                  {activeVehicle.speedKmh}
+                </span>
+                <span className="font-mono-tabular text-[10px] font-semibold text-slate-400">
+                  km/h
+                </span>
+              </div>
+            </div>
           )}
 
           <button
@@ -883,7 +1354,13 @@ export function HudOverlay({
           </button>
         </div>
 
-        {isLeftHanded ? joystickCluster : actionThumbCluster}
+        {isDriving
+          ? isLeftHanded
+            ? drivingSteerCluster
+            : drivingPedalCluster
+          : isLeftHanded
+            ? joystickCluster
+            : actionThumbCluster}
       </div>
     </div>
   );

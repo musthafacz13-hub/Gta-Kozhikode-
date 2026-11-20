@@ -60,6 +60,7 @@ const INITIAL_SNAPSHOT: EngineHudSnapshot = {
   homeDistanceMeters: 141,
   nearbyBuilding: null,
   activeDestination: null,
+  vehicle: null,
   audio: {
     unlocked: false,
     suspended: false,
@@ -240,6 +241,10 @@ function GameShell() {
           }}
           onHomeInteract={() => engineRef.current?.playHomeDoorPreview()}
           onBuildingInteract={() => engineRef.current?.interactWithNearbyBuilding()}
+          onEnterVehicle={() => engineRef.current?.tryEnterVehicle() ?? false}
+          onExitVehicle={() => engineRef.current?.tryExitVehicle() ?? false}
+          onVehicleControls={(patch) => engineRef.current?.input.setVehicleVirtualControls(patch)}
+          onVehicleHorn={() => engineRef.current?.triggerVehicleHorn()}
           onOpenWorldMap={() => setShowWorldMap(true)}
           onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
           onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}

@@ -5,6 +5,7 @@ import type { TeaShopSfxEvent } from '../audio/AudioTypes.ts';
 import {
   ArjunAnimator,
   type ArjunAnimatorSnapshot,
+  type SeatedVehiclePoseInput,
 } from '../player/ArjunAnimator.ts';
 import {
   createArjunCharacterRig,
@@ -12,6 +13,7 @@ import {
   type ArjunCharacterRig,
 } from '../player/ArjunCharacterModel.ts';
 import type {
+  DynamicVehicleObstacle,
   PlayerDynamicObstacles,
   PlayerMoveResult,
   StaticAabbCollider,
@@ -19,6 +21,12 @@ import type {
 import { AtmosphereSystem } from '../rendering/AtmosphereSystem.ts';
 import { MaterialLibrary } from '../rendering/MaterialLibrary.ts';
 import type { GraphicsTier, TimeOfDayPreset } from '../types.ts';
+import {
+  VehicleManager,
+  type EnterableVehicleCandidate,
+  type VehicleManagerStepResult,
+} from '../vehicle/VehicleManager.ts';
+import type { DynamicVehicleColliderRef } from '../vehicle/VehicleController.ts';
 import type { RegisteredBuildingRecord } from '../world/BuildingSystem.ts';
 import { getGroundHeightAt } from '../world/KozhikodeGeography.ts';
 import { PedestrianSystem } from '../world/PedestrianSystem.ts';
@@ -37,9 +45,12 @@ export class SceneManager {
   readonly worldStreamer: WorldStreamer;
   readonly trafficSystem: TrafficSystem;
   readonly pedestrianSystem: PedestrianSystem;
+  readonly vehicleManager: VehicleManager;
 
   private readonly arjunRig: ArjunCharacterRig;
   private readonly arjunAnimator: ArjunAnimator;
+  private readonly combinedVehicleObstacles: DynamicVehicleObstacle[] = [];
+  private readonly trafficColliderRefs: DynamicVehicleColliderRef[] = [];
   private debugGrid: THREE.GridHelper | null = null;
   private activePreset: GraphicsPresetProfile;
 
@@ -66,6 +77,9 @@ export class SceneManager {
 
     this.pedestrianSystem = new PedestrianSystem(this.activePreset);
     this.scene.add(this.pedestrianSystem.root);
+
+    this.vehicleManager = new VehicleManager();
+    this.scene.add(this.vehicleManager.activeGroup);
 
     this.arjunRig = createArjunCharacterRig();
     this.arjunRig.lod.position.set(22.5, 0.18, 2.5);
@@ -104,10 +118,44 @@ export class SceneManager {
     z: number,
   ): { activeVehicles: number; activePedestrians: number; nearTeaShop: boolean } {
     return {
-      activeVehicles: this.trafficSystem.getActiveVehicleCount(),
+      activeVehicles:
+        this.trafficSystem.getActiveVehicleCount() +
+        this.vehicleManager.getWorldVehicles().length,
       activePedestrians: this.pedestrianSystem.getActivePedestrianCount(),
       nearTeaShop: this.worldStreamer.getNearestTeaShopDistance(x, z) <= 28,
     };
+  }
+
+  findNearestEnterableVehicle(
+    x: number,
+    z: number,
+    maxEdgeDistance = 2.4,
+  ): EnterableVehicleCandidate | null {
+    return this.vehicleManager.findNearestEnterableVehicle(
+      x,
+      z,
+      this.worldStreamer,
+      this.trafficSystem,
+      maxEdgeDistance,
+    );
+  }
+
+  getTrafficVehicleColliders(): ReadonlyArray<DynamicVehicleColliderRef> {
+    const snaps = this.trafficSystem.getTrafficSnapshots();
+    this.trafficColliderRefs.length = 0;
+    for (let i = 0; i < snaps.length; i++) {
+      const s = snaps[i];
+      this.trafficColliderRefs.push({
+        id: s.id,
+        x: s.x,
+        z: s.z,
+        heading: s.heading,
+        width: s.width,
+        length: s.length,
+        speed: s.speed,
+      });
+    }
+    return this.trafficColliderRefs;
   }
 
   findNearestInteractableBuilding(
@@ -181,8 +229,17 @@ export class SceneManager {
   }
 
   getDynamicObstacles(): PlayerDynamicObstacles {
+    this.combinedVehicleObstacles.length = 0;
+    const traffic = this.trafficSystem.getTrafficSnapshots();
+    for (let i = 0; i < traffic.length; i++) {
+      this.combinedVehicleObstacles.push(traffic[i]);
+    }
+    const worldVehicles = this.vehicleManager.getDynamicObstaclesForPlayer();
+    for (let i = 0; i < worldVehicles.length; i++) {
+      this.combinedVehicleObstacles.push(worldVehicles[i]);
+    }
     return {
-      vehicles: this.trafficSystem.getTrafficSnapshots(),
+      vehicles: this.combinedVehicleObstacles,
       pedestrians: this.pedestrianSystem.getPedestrians(),
     };
   }
@@ -201,9 +258,38 @@ export class SceneManager {
   }
 
   syncPlayerVisual(state: PlayerMoveResult, dt: number, camera?: THREE.Camera): void {
+    this.arjunRig.lod.visible = true;
     this.arjunRig.lod.position.set(state.x, state.visualY, state.z);
     this.arjunRig.lod.rotation.y = state.heading;
-    this.arjunAnimator.update(this.arjunRig, state, dt);
+    this.arjunRig.lod.rotation.z = 0;
+    this.arjunAnimator.update(this.arjunRig, state, dt, null);
+    if (camera) {
+      this.arjunRig.lod.update(camera);
+    }
+  }
+
+  syncPlayerVehicleVisual(
+    step: VehicleManagerStepResult,
+    fallbackState: PlayerMoveResult,
+    dt: number,
+    camera?: THREE.Camera,
+  ): void {
+    this.arjunRig.lod.visible = step.playerVisible;
+    if (!step.playerVisible || !step.riderPose) {
+      return;
+    }
+    const rp = step.riderPose;
+    this.arjunRig.lod.position.set(rp.x, rp.y, rp.z);
+    this.arjunRig.lod.rotation.y = rp.heading;
+    this.arjunRig.lod.rotation.z = rp.leanAngleRad;
+    const seatedInput: SeatedVehiclePoseInput = {
+      category: rp.category,
+      steerNorm: rp.steerNorm,
+      leanAngleRad: rp.leanAngleRad,
+      speedMps: rp.speedMps,
+      leanForwardRad: rp.leanForwardRad,
+    };
+    this.arjunAnimator.update(this.arjunRig, fallbackState, dt, seatedInput);
     if (camera) {
       this.arjunRig.lod.update(camera);
     }
@@ -274,6 +360,7 @@ export class SceneManager {
       this.pedestrianSystem.getPedestrians(),
       playerPos,
       callbacks?.onVehicleHorn,
+      this.vehicleManager.getTrafficYieldVehicles(),
     );
 
     return changed;
@@ -285,6 +372,7 @@ export class SceneManager {
     this.worldStreamer.dispose();
     this.trafficSystem.dispose();
     this.pedestrianSystem.dispose();
+    this.vehicleManager.clearAll();
     this.scene.clear();
   }
 }

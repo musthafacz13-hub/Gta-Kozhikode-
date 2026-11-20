@@ -236,6 +236,20 @@ export class PedestrianSystem {
     return this.pedestrians;
   }
 
+  pushPedestrian(id: string, dx: number, dz: number): void {
+    for (let i = 0; i < this.pedestrians.length; i++) {
+      const p = this.pedestrians[i];
+      if (p.id !== id) continue;
+      p.x += dx;
+      p.z += dz;
+      p.y = getGroundHeightAt(p.x, p.z);
+      p.state = 'yield_vehicle';
+      p.pauseTimerSec = Math.max(p.pauseTimerSec, 0.75);
+      p.rig.lod.position.set(p.x, p.y, p.z);
+      break;
+    }
+  }
+
   private spawnPedestrians(): void {
     const maxPool = 52;
     for (let i = 0; i < maxPool; i++) {

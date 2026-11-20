@@ -67,6 +67,7 @@ export class GameEngine {
   private interactionNoticeSeq = 0;
   private mapToggleHandler: (() => void) | null = null;
   private externalModalOpen = false;
+  private vehiclesRestoredOnStart = false;
 
   private lastHudEmitMs = 0;
   private readonly hudListeners = new Set<(snapshot: EngineHudSnapshot) => void>();
@@ -191,9 +192,17 @@ export class GameEngine {
   getSnapshot(): EngineHudSnapshot {
     const focus = this.cameraManager?.getFocusState() ?? { x: 22.5, z: 2.5, yaw: 0 };
     const pState = this.player.getState();
-    const district = getDistrictAt(pState.x, pState.z);
-    const geo = worldToGeo(pState.x, pState.z);
-    const biome = getBiomeAtWorld(pState.x, pState.z);
+    const vehicleHud = this.sceneManager?.vehicleManager.getActiveHudState() ?? null;
+    const isDriving = Boolean(vehicleHud?.isDriving);
+    const activeVehicle = this.sceneManager?.vehicleManager.getActiveVehicleEntity() ?? null;
+
+    const liveX = isDriving && activeVehicle ? activeVehicle.controller.x : pState.x;
+    const liveZ = isDriving && activeVehicle ? activeVehicle.controller.z : pState.z;
+    const liveHeading = isDriving && activeVehicle ? activeVehicle.controller.heading : pState.heading;
+
+    const district = getDistrictAt(liveX, liveZ);
+    const geo = worldToGeo(liveX, liveZ);
+    const biome = getBiomeAtWorld(liveX, liveZ);
 
     // Resolve closest Taluk name from district metadata or nearest taluk headquarters
     const matchingPlace = KOZHIKODE_GAZETTEER_PLACES.find((p) => p.id === district.id);
@@ -202,15 +211,15 @@ export class GameEngine {
 
     const homeDist = Math.round(
       Math.hypot(
-        pState.x - PROTAGONIST_HOME_COORDS.gateX,
-        pState.z - PROTAGONIST_HOME_COORDS.gateZ,
+        liveX - PROTAGONIST_HOME_COORDS.gateX,
+        liveZ - PROTAGONIST_HOME_COORDS.gateZ,
       ),
     );
 
     let activeDestinationSnapshot: ActiveDestinationState | null = null;
     if (this.activeDestination) {
       const liveDist = Math.round(
-        Math.hypot(this.activeDestination.worldX - pState.x, this.activeDestination.worldZ - pState.z),
+        Math.hypot(this.activeDestination.worldX - liveX, this.activeDestination.worldZ - liveZ),
       );
       activeDestinationSnapshot = {
         ...this.activeDestination,
@@ -219,7 +228,9 @@ export class GameEngine {
       };
     }
 
-    const nearest = this.sceneManager?.findNearestInteractableBuilding(pState.x, pState.z, 8.5);
+    const nearest = !isDriving
+      ? this.sceneManager?.findNearestInteractableBuilding(liveX, liveZ, 8.5)
+      : null;
     const nearbyBuilding: NearbyBuildingSummary | null = nearest
       ? {
           id: nearest.building.id,
@@ -238,12 +249,19 @@ export class GameEngine {
 
     const animSnap = this.sceneManager?.getArjunAnimationSnapshot();
     const nearHome = homeDist <= 16;
-    const nearbyNpc = this.sceneManager?.getNearbyPedestrianForTalk(pState.x, pState.z, 2.6) ?? null;
+    const nearbyNpc = !isDriving
+      ? (this.sceneManager?.getNearbyPedestrianForTalk(liveX, liveZ, 2.6) ?? null)
+      : null;
+    const nearbyVehicle = !isDriving
+      ? (this.sceneManager?.findNearestEnterableVehicle(liveX, liveZ, 2.4) ?? null)
+      : null;
     const nearbyInteraction: ContextualInteractionTarget | null = resolveContextualInteraction({
       nearbyBuilding,
       nearHome,
       homeDistanceMeters: homeDist,
       nearbyNpc,
+      nearbyVehicle,
+      isDriving,
     });
 
     return {
@@ -253,16 +271,16 @@ export class GameEngine {
       cameraX: focus.x,
       cameraZ: focus.z,
       cameraYaw: focus.yaw,
-      playerX: pState.x,
-      playerZ: pState.z,
+      playerX: liveX,
+      playerZ: liveZ,
       playerLat: Number(geo.lat.toFixed(5)),
       playerLon: Number(geo.lon.toFixed(5)),
-      playerHeading: pState.heading,
-      isMoving: pState.isMoving,
-      isSprinting: pState.isSprinting,
-      isGrounded: pState.isGrounded,
+      playerHeading: liveHeading,
+      isMoving: isDriving ? (vehicleHud?.speedMps ?? 0) > 0.2 : pState.isMoving,
+      isSprinting: isDriving ? false : pState.isSprinting,
+      isGrounded: isDriving ? true : pState.isGrounded,
       movementGait: pState.movementGait,
-      animationState: animSnap?.activeState ?? 'idle',
+      animationState: animSnap?.activeState === 'driving' ? 'idle' : (animSnap?.activeState ?? 'idle'),
       interactionNotice: this.interactionNotice,
       pointerLocked: this.input.isPointerLocked(),
       districtName: district.name,
@@ -277,8 +295,9 @@ export class GameEngine {
       homeDistanceMeters: homeDist,
       nearbyBuilding,
       nearbyInteraction,
+      vehicle: vehicleHud,
       activeDestination: activeDestinationSnapshot,
-      ambientStats: this.sceneManager?.getAmbientStats(pState.x, pState.z),
+      ambientStats: this.sceneManager?.getAmbientStats(liveX, liveZ),
       audio: this.audio.getSnapshot(),
       showDebugGrid: this.sceneManager?.isDebugGridVisible() ?? false,
       activeSlotId: this.activeSlotId,
@@ -307,23 +326,88 @@ export class GameEngine {
     void this.audio.unlockFromGesture().then(() => {
       this.audio.playGameEvent('cinematic_whoosh');
     });
-    if (resetSpawn) {
+    this.audio.stopDrivingAudio();
+
+    if (resetSpawn && this.sceneManager) {
+      this.sceneManager.vehicleManager.clearAll(
+        this.sceneManager.worldStreamer,
+        this.sceneManager.trafficSystem,
+      );
+      this.vehiclesRestoredOnStart = true;
+      void this.storage.saveActiveWorldVehicles(null);
       this.player.resetSpawn(PROTAGONIST_HOME_COORDS.porchX, PROTAGONIST_HOME_COORDS.porchZ, 0);
     }
+
     const pState = this.player.getState();
+    let restoredActiveDriving = false;
+
     if (this.sceneManager) {
       this.sceneManager.update(0, pState.x, pState.z, this.cameraManager?.camera);
       const colliders = this.sceneManager.getColliders();
       const groundFn = (x: number, z: number) => this.sceneManager!.getGroundHeight(x, z);
       this.player.setEnvironment(colliders, groundFn);
       this.cameraManager?.setEnvironment(colliders, groundFn);
-      this.sceneManager.syncPlayerVisual(this.player.getState(), 0, this.cameraManager?.camera);
+
+      if (!resetSpawn && !this.vehiclesRestoredOnStart) {
+        this.vehiclesRestoredOnStart = true;
+        void this.restorePersistedVehiclesAsync();
+      } else {
+        restoredActiveDriving = this.sceneManager.vehicleManager.isDriving();
+      }
+
+      if (!restoredActiveDriving) {
+        this.sceneManager.syncPlayerVisual(this.player.getState(), 0, this.cameraManager?.camera);
+      }
     }
-    this.cameraManager?.setMode('free_inspect');
-    this.cameraManager?.snapToTarget(this.player.position, Math.PI);
+
+    if (restoredActiveDriving) {
+      const active = this.sceneManager?.vehicleManager.getActiveVehicleEntity();
+      this.cameraManager?.setMode('vehicle_chase');
+      if (active) {
+        this.player.position.set(active.controller.x, active.controller.y, active.controller.z);
+        this.cameraManager?.snapToTarget(this.player.position, active.controller.heading + Math.PI);
+      }
+    } else {
+      this.cameraManager?.setMode('free_inspect');
+      this.cameraManager?.snapToTarget(this.player.position, Math.PI);
+    }
+
     this.gameLoop?.setPaused(false);
     this.setMode('playing');
     this.logger.info('GameEngine', 'Entered open-world Kozhikode slice at West Hill residence');
+  }
+
+  private async restorePersistedVehiclesAsync(): Promise<void> {
+    if (!this.sceneManager || this.disposed) return;
+    const saved = await this.storage.getSavedWorldVehicles();
+    if (!saved || saved.vehicles.length === 0 || this.disposed) return;
+    const groundFn = (x: number, z: number) => this.sceneManager!.getGroundHeight(x, z);
+    const { restoredActiveEntity } = this.sceneManager.vehicleManager.restorePersistedState(
+      saved,
+      this.sceneManager.materials,
+      this.sceneManager.worldStreamer,
+      this.sceneManager.trafficSystem,
+      groundFn,
+    );
+    if (restoredActiveEntity && this.mode === 'playing') {
+      this.cameraManager?.setMode('vehicle_chase');
+      this.player.position.set(
+        restoredActiveEntity.controller.x,
+        restoredActiveEntity.controller.y,
+        restoredActiveEntity.controller.z,
+      );
+      this.cameraManager?.snapToTarget(
+        this.player.position,
+        restoredActiveEntity.controller.heading + Math.PI,
+      );
+    }
+    this.emitHudImmediate();
+  }
+
+  private async persistWorldVehicles(): Promise<void> {
+    if (!this.sceneManager) return;
+    const state = this.sceneManager.vehicleManager.exportPersistedState();
+    await this.storage.saveActiveWorldVehicles(state);
   }
 
   setMapToggleHandler(handler: (() => void) | null): void {
@@ -333,6 +417,7 @@ export class GameEngine {
   setExternalModalOpen(open: boolean): void {
     this.externalModalOpen = open;
     if (open) {
+      this.audio.stopDrivingAudio();
       this.input.clearAll();
       this.input.releasePointerLock();
       this.gameLoop?.setPaused(true);
@@ -345,6 +430,7 @@ export class GameEngine {
   togglePause(): void {
     if (this.mode === 'playing') {
       this.audio.playUiSound('ui_click');
+      this.audio.stopDrivingAudio();
       this.gameLoop?.setPaused(true);
       this.input.clearAll();
       this.input.releasePointerLock();
@@ -358,6 +444,7 @@ export class GameEngine {
 
   returnToTitle(): void {
     this.audio.playUiSound('ui_back');
+    this.audio.stopDrivingAudio();
     this.externalModalOpen = false;
     this.gameLoop?.setPaused(false);
     this.cameraManager?.setMode('title_orbit');
@@ -374,22 +461,25 @@ export class GameEngine {
 
   toggleCameraMode(): void {
     if (!this.cameraManager) return;
-    if (this.mode === 'playing' && this.cameraManager.getMode() === 'free_inspect') {
+    const activeCamMode = this.cameraManager.getMode();
+    if (
+      this.mode === 'playing' &&
+      (activeCamMode === 'free_inspect' || activeCamMode === 'vehicle_chase')
+    ) {
       const nextPreset = this.cameraManager.cycleThirdPersonPreset();
       this.settings = { ...this.settings, cameraPreset: nextPreset };
       void this.storage.saveSettings(this.settings);
       this.audio.playUiSound('ui_click');
       const labels: Record<ThirdPersonCameraPreset, string> = {
-        close: 'Camera: Close Follow',
-        standard: 'Camera: Standard Third-Person',
-        wide: 'Camera: Wide Street View',
+        close: activeCamMode === 'vehicle_chase' ? 'Chase Cam: Close' : 'Camera: Close Follow',
+        standard: activeCamMode === 'vehicle_chase' ? 'Chase Cam: Standard' : 'Camera: Standard Third-Person',
+        wide: activeCamMode === 'vehicle_chase' ? 'Chase Cam: Wide' : 'Camera: Wide Street View',
       };
       this.pushInteractionNotice(labels[nextPreset]);
       this.emitHudImmediate();
       return;
     }
-    const current = this.cameraManager.getMode();
-    this.setCameraMode(current === 'title_orbit' ? 'free_inspect' : 'title_orbit');
+    this.setCameraMode(activeCamMode === 'title_orbit' ? 'free_inspect' : 'title_orbit');
   }
 
   setThirdPersonCameraPreset(preset: ThirdPersonCameraPreset): void {
@@ -415,10 +505,116 @@ export class GameEngine {
     });
   }
 
-  interactWithNearbyBuilding(): string {
+  tryEnterVehicle(): boolean {
+    if (!this.sceneManager || this.mode !== 'playing') return false;
     const pState = this.player.getState();
+    const res = this.sceneManager.vehicleManager.requestEnterVehicle(
+      { x: pState.x, y: pState.y, z: pState.z, heading: pState.heading },
+      this.sceneManager.worldStreamer,
+      this.sceneManager.trafficSystem,
+    );
+
+    if (!res.accepted || !res.entity) {
+      if (res.reason) {
+        this.pushInteractionNotice(res.reason);
+      }
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return false;
+    }
+
+    const prof = res.entity.controller.profile;
+    this.input.clearAll();
+    const colliders = this.sceneManager.getColliders();
+    const groundFn = (x: number, z: number) => this.sceneManager!.getGroundHeight(x, z);
+    this.player.setEnvironment(colliders, groundFn);
+    this.cameraManager?.setEnvironment(colliders, groundFn);
+    this.cameraManager?.setMode('vehicle_chase');
+    void this.audio.unlockFromGesture().then(() => {
+      if (prof.isEnclosed) {
+        this.audio.playCharacterEvent('door_open');
+      } else {
+        this.audio.playUiSound('ui_click');
+      }
+    });
+    this.pushInteractionNotice(`Entered ${prof.displayName}`);
+    this.events.emit('vehicle:entered', {
+      vehicleId: res.entity.id,
+      modelId: res.entity.modelId,
+      displayName: prof.displayName,
+    });
+    void this.persistWorldVehicles();
+    this.emitHudImmediate();
+    return true;
+  }
+
+  tryExitVehicle(): boolean {
+    if (!this.sceneManager) return false;
+    const colliders = this.sceneManager.getColliders();
+    const trafficColliders = this.sceneManager.getTrafficVehicleColliders();
+    const groundFn = (x: number, z: number) => this.sceneManager!.getGroundHeight(x, z);
+    const res = this.sceneManager.vehicleManager.requestExitVehicle(
+      colliders,
+      trafficColliders,
+      groundFn,
+    );
+
+    if (!res.exited) {
+      if (res.reason) {
+        this.pushInteractionNotice(res.reason);
+      }
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return false;
+    }
+
+    this.audio.stopDrivingAudio();
+    this.input.clearVehicleVirtualControls();
+    this.player.setEnvironment(colliders, groundFn);
+    this.player.resetSpawn(res.exitX!, res.exitZ!, res.exitHeading ?? 0);
+    this.sceneManager.syncPlayerVisual(this.player.getState(), 0, this.cameraManager?.camera);
+    this.cameraManager?.setMode('free_inspect');
+    this.cameraManager?.snapToTarget(this.player.position, (res.exitHeading ?? 0) + Math.PI);
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playCharacterEvent('door_close');
+    });
+    this.events.emit('vehicle:exited', {
+      vehicleId: res.vehicleId,
+      modelId: res.modelId,
+    });
+    void this.persistWorldVehicles();
+    this.emitHudImmediate();
+    return true;
+  }
+
+  triggerVehicleHorn(): void {
+    const active = this.sceneManager?.vehicleManager.getActiveVehicleEntity();
+    if (!active) return;
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playDrivingHorn(active.controller.profile.audioKind);
+    });
+  }
+
+  interactWithNearbyBuilding(): string {
+    if (this.sceneManager?.vehicleManager.isDriving()) {
+      this.tryExitVehicle();
+      return '';
+    }
+    const pState = this.player.getState();
+    const nearbyVehicle = this.sceneManager?.findNearestEnterableVehicle(pState.x, pState.z, 2.4) ?? null;
     const nearest = this.sceneManager?.findNearestInteractableBuilding(pState.x, pState.z, 8.5);
+    if (
+      nearbyVehicle &&
+      nearbyVehicle.canEnter &&
+      (!nearest || nearbyVehicle.distanceMeters <= nearest.distanceMeters + 0.6)
+    ) {
+      this.tryEnterVehicle();
+      return '';
+    }
     if (!nearest) {
+      if (nearbyVehicle && !nearbyVehicle.canEnter && nearbyVehicle.reason) {
+        return nearbyVehicle.reason;
+      }
       const nearbyNpc = this.sceneManager?.getNearbyPedestrianForTalk(pState.x, pState.z, 2.6);
       if (nearbyNpc) {
         void this.audio.unlockFromGesture().then(() => {
@@ -543,6 +739,23 @@ export class GameEngine {
   }
 
   private teleportTo(x: number, z: number, heading: number): void {
+    if (this.sceneManager?.vehicleManager.isDriving()) {
+      const active = this.sceneManager.vehicleManager.getActiveVehicleEntity();
+      if (active) {
+        active.controller.parkImmediately((gx, gz) => this.sceneManager!.getGroundHeight(gx, gz));
+      }
+      this.audio.stopDrivingAudio();
+      // Exit cleanly so fast-travel drops Arjun on foot cleanly at the chosen landmark
+      const colliders = this.sceneManager.getColliders();
+      const traffic = this.sceneManager.getTrafficVehicleColliders();
+      this.sceneManager.vehicleManager.requestExitVehicle(
+        colliders,
+        traffic,
+        (gx, gz) => this.sceneManager!.getGroundHeight(gx, gz),
+      );
+      this.cameraManager?.setMode('free_inspect');
+    }
+
     let targetX = x;
     let targetZ = z;
     if (this.sceneManager) {
@@ -648,7 +861,13 @@ export class GameEngine {
 
   async saveCheckpoint(slotId = 'slot_manual_1', label?: string): Promise<SaveSlotMeta> {
     const pState = this.player.getState();
-    const district = getDistrictAt(pState.x, pState.z);
+    const activeVeh = this.sceneManager?.vehicleManager.getActiveVehicleEntity();
+    const saveX = activeVeh ? activeVeh.controller.x : pState.x;
+    const saveZ = activeVeh ? activeVeh.controller.z : pState.z;
+    const district = getDistrictAt(saveX, saveZ);
+    const vehicleState = this.sceneManager?.vehicleManager.exportPersistedState();
+    await this.storage.saveActiveWorldVehicles(vehicleState ?? null);
+
     const slotType = slotId.startsWith('slot_auto') ? 'autosave' : 'manual';
     const saved = await this.storage.upsertSlot({
       slotId,
@@ -659,6 +878,7 @@ export class GameEngine {
       playtimeSeconds: Math.round(this.playtimeSeconds),
       savedAt: Date.now(),
       cameraPreset: this.cameraManager?.getStatePreset() ?? 'free_inspect',
+      vehicleState,
     });
     this.activeSlotId = saved.slotId;
     this.slots = await this.storage.listSlots();
@@ -756,27 +976,106 @@ export class GameEngine {
       return;
     }
 
+    let vehicleCamCtx: import('./camera/CameraManager.ts').VehicleCameraContext | null = null;
+    let isDrivingNow = this.sceneManager?.vehicleManager.isDriving() ?? false;
+
     if (this.mode === 'playing') {
       this.playtimeSeconds += fixedDt;
       if (frameInput.justPressed.toggle_camera) {
         this.toggleCameraMode();
       }
       if (frameInput.justPressed.interact) {
-        const msg = this.interactWithNearbyBuilding();
-        if (msg) {
-          this.pushInteractionNotice(msg);
-          this.emitHudImmediate();
+        if (isDrivingNow) {
+          this.tryExitVehicle();
+          isDrivingNow = this.sceneManager?.vehicleManager.isDriving() ?? false;
+        } else {
+          const msg = this.interactWithNearbyBuilding();
+          isDrivingNow = this.sceneManager?.vehicleManager.isDriving() ?? false;
+          if (msg) {
+            this.pushInteractionNotice(msg);
+            this.emitHudImmediate();
+          }
         }
       }
-      const camYaw = this.cameraManager?.getYaw() ?? 0;
-      const obstacles = this.sceneManager?.getDynamicObstacles();
-      const moveState = this.player.update(fixedDt, frameInput, camYaw, obstacles);
-      this.sceneManager?.syncPlayerVisual(moveState, fixedDt, this.cameraManager?.camera);
+
+      if (isDrivingNow && this.sceneManager) {
+        if (frameInput.vehicle.hornJustPressed) {
+          this.triggerVehicleHorn();
+        }
+        const colliders = this.sceneManager.getColliders();
+        const groundFn = (x: number, z: number) => this.sceneManager!.getGroundHeight(x, z);
+        const trafficVehicles = this.sceneManager.getTrafficVehicleColliders();
+        const pedestrians = this.sceneManager.pedestrianSystem.getPedestrians();
+        const activeBefore = this.sceneManager.vehicleManager.getActiveVehicleEntity();
+        const audioKind = activeBefore?.controller.profile.audioKind ?? 'car';
+
+        const stepRes = this.sceneManager.vehicleManager.update(
+          fixedDt,
+          frameInput.vehicle,
+          {
+            colliders,
+            groundHeightFn: groundFn,
+            trafficVehicles,
+            pedestrians,
+            onPedestrianImpact: (pedId, pushX, pushZ) => {
+              this.sceneManager?.pedestrianSystem.pushPedestrian(pedId, pushX, pushZ);
+            },
+            onCollision: (ev) => {
+              this.audio.playDrivingCollision(audioKind, ev.impactSpeedMps);
+              this.events.emit('vehicle:collision', {
+                impactSpeedMps: ev.impactSpeedMps,
+                damageState: ev.damageState,
+                kind: ev.kind,
+              });
+            },
+          },
+          this.cameraManager?.camera,
+          false,
+        );
+
+        const ds = stepRes.driveState;
+        if (ds) {
+          this.player.position.set(ds.x, ds.y, ds.z);
+          this.player.visualY = ds.y;
+          this.player.heading = ds.heading;
+          this.sceneManager.syncPlayerVehicleVisual(
+            stepRes,
+            this.player.getState(),
+            fixedDt,
+            this.cameraManager?.camera,
+          );
+          this.audio.updateDrivingAudio(fixedDt, {
+            audioKind: ds.profile.audioKind,
+            rpmNormalized: ds.rpmNormalized,
+            speedMps: ds.speedMps,
+            isBraking: ds.isBraking,
+            isDrifting: ds.isDrifting,
+          });
+          vehicleCamCtx = {
+            x: ds.x,
+            y: ds.y,
+            z: ds.z,
+            heading: ds.heading,
+            speedMps: ds.speedMps,
+            length: ds.profile.length,
+            height: ds.profile.height,
+            isReversing: ds.isReversing,
+          };
+        }
+      } else {
+        this.audio.updateDrivingAudio(fixedDt, null);
+        const camYaw = this.cameraManager?.getYaw() ?? 0;
+        const obstacles = this.sceneManager?.getDynamicObstacles();
+        const moveState = this.player.update(fixedDt, frameInput, camYaw, obstacles);
+        this.sceneManager?.syncPlayerVisual(moveState, fixedDt, this.cameraManager?.camera);
+      }
+    } else {
+      this.audio.updateDrivingAudio(fixedDt, null);
     }
 
-    const streamFocusX = this.mode === 'title' ? 8 : this.player.position.x;
-    const streamFocusZ = this.mode === 'title' ? 0 : this.player.position.z;
     const pState = this.player.getState();
+    const streamFocusX = this.mode === 'title' ? 8 : pState.x;
+    const streamFocusZ = this.mode === 'title' ? 0 : pState.z;
     const camFocus = this.cameraManager?.getFocusState() ?? { x: streamFocusX, z: streamFocusZ, yaw: 0 };
     const collidersChanged = this.sceneManager?.update(
       fixedDt,
@@ -825,13 +1124,13 @@ export class GameEngine {
       isMarket: district.id === 'sm_street' || district.id === 'palayam',
       isHomeZone: district.id === 'protagonist_home' || homeDist < 28,
       isPlaying: this.mode === 'playing',
-      isMoving: pState.isMoving,
-      isSprinting: pState.isSprinting,
-      speed: pState.speed,
+      isMoving: isDrivingNow ? false : pState.isMoving,
+      isSprinting: isDrivingNow ? false : pState.isSprinting,
+      speed: isDrivingNow ? 0 : pState.speed,
       teaShopDistanceMeters,
     });
 
-    this.cameraManager?.update(fixedDt, frameInput, this.player.position);
+    this.cameraManager?.update(fixedDt, frameInput, this.player.position, vehicleCamCtx);
   }
 
   private handleRender(_frameDt: number): void {

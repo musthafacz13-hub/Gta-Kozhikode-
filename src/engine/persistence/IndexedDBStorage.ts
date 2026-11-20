@@ -155,6 +155,7 @@ export class IndexedDBStorage {
   private storageMode: 'indexeddb' | 'memory_fallback' = 'memory_fallback';
 
   private memorySettings: GameSettings = createDefaultSettings();
+  private memoryVehiclesState: import('../types.ts').SavedVehiclesState | null = null;
   private readonly memorySlots = new Map<string, SaveSlotMeta>();
 
   constructor(logger?: Logger) {
@@ -276,6 +277,39 @@ export class IndexedDBStorage {
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error ?? new Error('Failed to delete save slot'));
     });
+  }
+
+  async getSavedWorldVehicles(): Promise<import('../types.ts').SavedVehiclesState | null> {
+    if (!this.db || this.storageMode === 'memory_fallback') {
+      return this.memoryVehiclesState ? { ...this.memoryVehiclesState } : null;
+    }
+    const raw = await this.readRecord<import('../types.ts').SavedVehiclesState>(
+      SETTINGS_STORE,
+      'active_vehicles_v1',
+    );
+    return raw ?? null;
+  }
+
+  async saveActiveWorldVehicles(
+    state: import('../types.ts').SavedVehiclesState | null,
+  ): Promise<void> {
+    const clean = state
+      ? {
+          ...state,
+          schemaVersion: PERSISTENCE_SCHEMA_VERSION,
+          updatedAt: Date.now(),
+        }
+      : {
+          schemaVersion: PERSISTENCE_SCHEMA_VERSION,
+          activeVehicleId: null,
+          vehicles: [],
+          updatedAt: Date.now(),
+        };
+    if (!this.db || this.storageMode === 'memory_fallback') {
+      this.memoryVehiclesState = clean;
+      return;
+    }
+    await this.writeRecord(SETTINGS_STORE, clean, 'active_vehicles_v1');
   }
 
   close(): void {

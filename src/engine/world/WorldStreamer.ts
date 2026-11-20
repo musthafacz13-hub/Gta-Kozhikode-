@@ -41,6 +41,7 @@ import {
   worldToChunkCoords,
 } from './KozhikodeGeography.ts';
 import {
+  VEHICLE_BLUEPRINT_META,
   createAutoRickshawLOD,
   createCarLOD,
   createCityBusLOD,
@@ -49,12 +50,42 @@ import {
   createMotorcycleLOD,
   createScooterLOD,
   createVehicleModelLOD,
+  type VehicleFleetCategory,
+  type VehicleModelId,
 } from './VehicleVisualFactory.ts';
 
 const MIN_CHUNK_X = Math.floor((KOZHIKODE_WORLD_BOUNDS.minX + CHUNK_SIZE_METERS * 0.5) / CHUNK_SIZE_METERS);
 const MAX_CHUNK_X = Math.floor((KOZHIKODE_WORLD_BOUNDS.maxX + CHUNK_SIZE_METERS * 0.5) / CHUNK_SIZE_METERS);
 const MIN_CHUNK_Z = Math.floor((KOZHIKODE_WORLD_BOUNDS.minZ + CHUNK_SIZE_METERS * 0.5) / CHUNK_SIZE_METERS);
 const MAX_CHUNK_Z = Math.floor((KOZHIKODE_WORLD_BOUNDS.maxZ + CHUNK_SIZE_METERS * 0.5) / CHUNK_SIZE_METERS);
+
+export interface ParkedVehicleEntry {
+  id: string;
+  modelId: VehicleModelId;
+  colorHex: number;
+  displayName: string;
+  category: VehicleFleetCategory;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  width: number;
+  length: number;
+  lod: THREE.Object3D;
+  colliderIndex: number;
+  claimed: boolean;
+}
+
+export interface ClaimedParkedVehicle {
+  id: string;
+  modelId: VehicleModelId;
+  colorHex: number;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  lod: THREE.Object3D;
+}
 
 interface LoadedChunk {
   key: string;
@@ -64,6 +95,7 @@ interface LoadedChunk {
   colliders: StaticAabbCollider[];
   buildings: RegisteredBuildingRecord[];
   teaShops: ChaiPeedikaInstance[];
+  parkedVehicles: ParkedVehicleEntry[];
 }
 
 const _dummy = new THREE.Object3D();
@@ -107,6 +139,11 @@ export class WorldStreamer {
   private activeColliders: StaticAabbCollider[] = [];
   private activeBuildings: RegisteredBuildingRecord[] = [];
   private activeTeaShops: ChaiPeedikaInstance[] = [];
+  private activeParkedVehicles: ParkedVehicleEntry[] = [];
+  private readonly claimedParkedIds = new Set<string>();
+  private loadingChunkKey = '';
+  private loadingParkedBuffer: ParkedVehicleEntry[] | null = null;
+  private loadingParkedCounter = 0;
   private collidersDirty = true;
   private preset: GraphicsPresetProfile;
   private originOffset = { x: 0, z: 0 };
@@ -265,6 +302,7 @@ export class WorldStreamer {
     ];
     const mergedBuildings: RegisteredBuildingRecord[] = [];
     const mergedTeaShops: ChaiPeedikaInstance[] = [];
+    const mergedParked: ParkedVehicleEntry[] = [];
     for (const chunk of this.loadedChunks.values()) {
       for (let i = 0; i < chunk.colliders.length; i++) {
         mergedColliders.push(chunk.colliders[i]);
@@ -275,11 +313,107 @@ export class WorldStreamer {
       for (let i = 0; i < chunk.teaShops.length; i++) {
         mergedTeaShops.push(chunk.teaShops[i]);
       }
+      for (let i = 0; i < chunk.parkedVehicles.length; i++) {
+        const pv = chunk.parkedVehicles[i];
+        if (!pv.claimed && !this.claimedParkedIds.has(pv.id)) {
+          mergedParked.push(pv);
+        }
+      }
     }
     this.activeColliders = mergedColliders;
     this.activeBuildings = mergedBuildings;
     this.activeTeaShops = mergedTeaShops;
+    this.activeParkedVehicles = mergedParked;
     this.collidersDirty = false;
+  }
+
+  getActiveParkedVehicles(): ReadonlyArray<ParkedVehicleEntry> {
+    if (this.collidersDirty) {
+      this.rebuildActiveCaches();
+    }
+    return this.activeParkedVehicles;
+  }
+
+  claimParkedVehicle(id: string): ClaimedParkedVehicle | null {
+    for (const chunk of this.loadedChunks.values()) {
+      for (let i = 0; i < chunk.parkedVehicles.length; i++) {
+        const pv = chunk.parkedVehicles[i];
+        if (pv.id !== id || pv.claimed) continue;
+        pv.claimed = true;
+        this.claimedParkedIds.add(id);
+        chunk.group.remove(pv.lod);
+        if (pv.colliderIndex >= 0 && pv.colliderIndex < chunk.colliders.length) {
+          const removedIdx = pv.colliderIndex;
+          chunk.colliders.splice(removedIdx, 1);
+          for (let j = 0; j < chunk.parkedVehicles.length; j++) {
+            const other = chunk.parkedVehicles[j];
+            if (!other.claimed && other.colliderIndex > removedIdx) {
+              other.colliderIndex -= 1;
+            }
+          }
+          pv.colliderIndex = -1;
+        }
+        this.collidersDirty = true;
+        this.rebuildActiveCaches();
+        return {
+          id: pv.id,
+          modelId: pv.modelId,
+          colorHex: pv.colorHex,
+          x: pv.x,
+          y: pv.y,
+          z: pv.z,
+          heading: pv.heading,
+          lod: pv.lod,
+        };
+      }
+    }
+    return null;
+  }
+
+  setClaimedParkedIds(ids: Iterable<string>): void {
+    this.claimedParkedIds.clear();
+    for (const id of ids) {
+      this.claimedParkedIds.add(id);
+    }
+    for (const chunk of this.loadedChunks.values()) {
+      for (let i = 0; i < chunk.parkedVehicles.length; i++) {
+        const pv = chunk.parkedVehicles[i];
+        if (this.claimedParkedIds.has(pv.id) && !pv.claimed) {
+          pv.claimed = true;
+          chunk.group.remove(pv.lod);
+          if (pv.colliderIndex >= 0 && pv.colliderIndex < chunk.colliders.length) {
+            const removedIdx = pv.colliderIndex;
+            chunk.colliders.splice(removedIdx, 1);
+            for (let j = 0; j < chunk.parkedVehicles.length; j++) {
+              const other = chunk.parkedVehicles[j];
+              if (!other.claimed && other.colliderIndex > removedIdx) {
+                other.colliderIndex -= 1;
+              }
+            }
+            pv.colliderIndex = -1;
+          }
+        }
+      }
+    }
+    this.collidersDirty = true;
+    this.rebuildActiveCaches();
+  }
+
+  clearClaimedParkedIds(): void {
+    this.claimedParkedIds.clear();
+    let unloadedAny = false;
+    for (const [key, chunk] of this.loadedChunks.entries()) {
+      if (chunk.parkedVehicles.some((pv) => pv.claimed)) {
+        this.chunksGroup.remove(chunk.group);
+        disposeChunkGeometries(chunk.group);
+        this.loadedChunks.delete(key);
+        unloadedAny = true;
+      }
+    }
+    if (unloadedAny) {
+      this.collidersDirty = true;
+      this.rebuildActiveCaches();
+    }
   }
 
   getActiveTeaShops(): ReadonlyArray<ChaiPeedikaInstance> {
@@ -513,33 +647,43 @@ export class WorldStreamer {
     const colliders: StaticAabbCollider[] = [];
     const buildings: RegisteredBuildingRecord[] = [];
     const teaShops: ChaiPeedikaInstance[] = [];
+    const parkedVehicles: ParkedVehicleEntry[] = [];
     const key = `${cx},${cz}`;
 
-    if (cx === 0 && cz === 0) {
-      this.populateMananchiraCoreChunk(group, colliders, buildings);
-    } else if (cx === 0 && cz === 1) {
-      this.populateSmStreetAndStationChunk(group, colliders, buildings);
-    } else if (cx === 0 && cz === 2) {
-      this.populateStationSouthForecourtChunk(group, colliders, buildings);
-    } else if (cx === 1 && cz === 0) {
-      this.populateMavoorRoadChunk(group, colliders, buildings, teaShops);
-    } else if (cx === 1 && cz === 1) {
-      this.populatePalayamChunk(group, colliders, buildings);
-    } else if (cx === -1 && cz === 0) {
-      this.populateKozhikodeBeachChunk(group, colliders, buildings);
-    } else if (cx === -1 && cz === 1) {
-      this.populateSouthBeachChunk(group, colliders, buildings);
-    } else if (cx === 0 && cz === -1) {
-      this.populateProtagonistHomeChunk(group, colliders, buildings, teaShops);
-    } else if (cx === -1 && cz === -1) {
-      this.populateWestHillCoastalChunk(group, colliders, buildings);
-    } else if (cx === 0 && cz === -2) {
-      this.populateNadakkavuChunk(group, colliders, buildings);
-    } else {
-      this.populateOuterDistrictChunk(cx, cz, group, colliders, buildings);
+    this.loadingChunkKey = key;
+    this.loadingParkedBuffer = parkedVehicles;
+    this.loadingParkedCounter = 0;
+
+    try {
+      if (cx === 0 && cz === 0) {
+        this.populateMananchiraCoreChunk(group, colliders, buildings);
+      } else if (cx === 0 && cz === 1) {
+        this.populateSmStreetAndStationChunk(group, colliders, buildings);
+      } else if (cx === 0 && cz === 2) {
+        this.populateStationSouthForecourtChunk(group, colliders, buildings);
+      } else if (cx === 1 && cz === 0) {
+        this.populateMavoorRoadChunk(group, colliders, buildings, teaShops);
+      } else if (cx === 1 && cz === 1) {
+        this.populatePalayamChunk(group, colliders, buildings);
+      } else if (cx === -1 && cz === 0) {
+        this.populateKozhikodeBeachChunk(group, colliders, buildings);
+      } else if (cx === -1 && cz === 1) {
+        this.populateSouthBeachChunk(group, colliders, buildings);
+      } else if (cx === 0 && cz === -1) {
+        this.populateProtagonistHomeChunk(group, colliders, buildings, teaShops);
+      } else if (cx === -1 && cz === -1) {
+        this.populateWestHillCoastalChunk(group, colliders, buildings);
+      } else if (cx === 0 && cz === -2) {
+        this.populateNadakkavuChunk(group, colliders, buildings);
+      } else {
+        this.populateOuterDistrictChunk(cx, cz, group, colliders, buildings);
+      }
+    } finally {
+      this.loadingChunkKey = '';
+      this.loadingParkedBuffer = null;
     }
 
-    return { key, cx, cz, group, colliders, buildings, teaShops };
+    return { key, cx, cz, group, colliders, buildings, teaShops, parkedVehicles };
   }
 
   private addSidewalkPad(group: THREE.Group, x: number, z: number, w: number, d: number, y = 0.09): void {
@@ -569,11 +713,22 @@ export class WorldStreamer {
     halfLength: number,
     maxY = 1.85,
   ): void {
+    const modelId = (vehicleObj.userData?.modelId as VehicleModelId | undefined) ?? 'maruti_swift';
+    const colorHex = (vehicleObj.userData?.colorHex as number | undefined) ?? 0xf8fafc;
+    const meta = VEHICLE_BLUEPRINT_META[modelId];
+    const parkedIdx = this.loadingParkedCounter++;
+    const parkedId = `parked_${this.loadingChunkKey || 'static'}_${parkedIdx}_${modelId}`;
+
+    if (this.claimedParkedIds.has(parkedId)) {
+      return;
+    }
+
     group.add(vehicleObj);
     const absCos = Math.abs(Math.cos(vehicleObj.rotation.y));
     const absSin = Math.abs(Math.sin(vehicleObj.rotation.y));
     const extX = absCos * halfWidth + absSin * halfLength;
     const extZ = absSin * halfWidth + absCos * halfLength;
+    const colliderIndex = colliders.length;
     colliders.push({
       minX: vehicleObj.position.x - extX,
       maxX: vehicleObj.position.x + extX,
@@ -581,6 +736,23 @@ export class WorldStreamer {
       maxZ: vehicleObj.position.z + extZ,
       maxY: vehicleObj.position.y + maxY,
       kind: 'vehicle',
+    });
+
+    this.loadingParkedBuffer?.push({
+      id: parkedId,
+      modelId,
+      colorHex,
+      displayName: meta.displayName,
+      category: meta.category,
+      x: vehicleObj.position.x,
+      y: vehicleObj.position.y,
+      z: vehicleObj.position.z,
+      heading: vehicleObj.rotation.y,
+      width: meta.width,
+      length: meta.length,
+      lod: vehicleObj,
+      colliderIndex,
+      claimed: false,
     });
   }
 
@@ -2740,7 +2912,7 @@ export class WorldStreamer {
       } else {
         const bus = createCityBusLOD(this.mats);
         bus.position.set(place.worldX - 10, py + 0.02, place.worldZ + 12);
-        group.add(bus);
+        this.addParkedVehicleWithCollider(group, colliders, bus, 1.25, 4.6, 3.1);
       }
     }
 

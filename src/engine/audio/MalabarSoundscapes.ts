@@ -420,6 +420,38 @@ export class MalabarSoundscapes {
       return;
     }
 
+    if (event === 'collision') {
+      const buf = this.bufferCache.get('proc_pink_noise_short')!;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 680;
+      const noiseEnv = this.ctx.createGain();
+      const scale = Math.max(0.12, Math.min(1.0, distanceGainScale));
+      noiseEnv.gain.setValueAtTime(0.0001, now);
+      noiseEnv.gain.linearRampToValueAtTime(0.18 * scale, now + 0.006);
+      noiseEnv.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+      src.connect(lp);
+      lp.connect(noiseEnv);
+      noiseEnv.connect(panner);
+      src.start(now, 0, 0.28);
+
+      const thud = this.ctx.createOscillator();
+      thud.type = 'triangle';
+      thud.frequency.setValueAtTime(115, now);
+      thud.frequency.exponentialRampToValueAtTime(38, now + 0.16);
+      const thudEnv = this.ctx.createGain();
+      thudEnv.gain.setValueAtTime(0.0001, now);
+      thudEnv.gain.linearRampToValueAtTime(0.22 * scale, now + 0.005);
+      thudEnv.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      thud.connect(thudEnv);
+      thudEnv.connect(panner);
+      thud.start(now);
+      thud.stop(now + 0.2);
+      return;
+    }
+
     // Brake / tire screech
     const buf = this.bufferCache.get('proc_pink_noise_short')!;
     const src = this.ctx.createBufferSource();
@@ -439,13 +471,17 @@ export class MalabarSoundscapes {
   }
 
   /**
-   * Prepared continuous vehicle engine loop contract for Phase 7 drivable vehicles.
+   * Continuous vehicle engine + tire roll loop for drivable Phase 7 vehicles.
    */
   createVehicleEngineLoop(kind: VehicleAudioKind): VehicleEngineLoopHandle {
     const profile = VEHICLE_AUDIO_PROFILES[kind];
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.value = profile.baseHz;
+
+    const subOsc = this.ctx.createOscillator();
+    subOsc.type = 'triangle';
+    subOsc.frequency.value = profile.baseHz * 0.5;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
@@ -455,9 +491,11 @@ export class MalabarSoundscapes {
     gain.gain.value = 0.0001;
 
     osc.connect(filter);
+    subOsc.connect(filter);
     filter.connect(gain);
     gain.connect(this.sfxBus);
     osc.start();
+    subOsc.start();
 
     return {
       setThrottle: (rpmNorm: number) => {
@@ -465,13 +503,16 @@ export class MalabarSoundscapes {
         const now = this.ctx.currentTime;
         const targetHz = profile.baseHz + (profile.maxHz - profile.baseHz) * clamped;
         osc.frequency.setTargetAtTime(targetHz, now, 0.06);
+        subOsc.frequency.setTargetAtTime(targetHz * 0.5, now, 0.06);
         filter.frequency.setTargetAtTime(220 + clamped * 680, now, 0.06);
-        gain.gain.setTargetAtTime(profile.maxGain * (0.35 + clamped * 0.65), now, 0.08);
+        gain.gain.setTargetAtTime(profile.maxGain * (0.32 + clamped * 0.68), now, 0.08);
       },
       stop: () => {
         try {
           osc.stop();
+          subOsc.stop();
           osc.disconnect();
+          subOsc.disconnect();
           filter.disconnect();
           gain.disconnect();
         } catch {

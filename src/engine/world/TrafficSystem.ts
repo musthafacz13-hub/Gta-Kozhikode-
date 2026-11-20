@@ -55,6 +55,7 @@ interface RoadSegment {
 interface ActiveTrafficVehicle {
   id: string;
   modelId: VehicleModelId;
+  colorHex: number;
   lod: THREE.LOD;
   wheels: THREE.Object3D[];
   length: number;
@@ -86,6 +87,19 @@ interface ActiveTrafficVehicle {
   queuedTimeSec: number;
   wheelSpinAngle: number;
   seed: number;
+  claimed: boolean;
+}
+
+export interface ClaimedTrafficVehicle {
+  id: string;
+  modelId: VehicleModelId;
+  colorHex: number;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  speedMps: number;
+  lod: THREE.LOD;
 }
 
 const ZONE_MODELS: Record<string, VehicleModelId[]> = {
@@ -306,6 +320,7 @@ export class TrafficSystem {
   private readonly mats: MaterialLibrary;
   private readonly segments: RoadSegment[];
   private readonly vehicles: ActiveTrafficVehicle[] = [];
+  private activeTrafficCache: ActiveTrafficVehicle[] = [];
   private globalHornCooldownSec = 1.2;
   private targetCount = 26;
   private initialized = false;
@@ -317,18 +332,24 @@ export class TrafficSystem {
     this.spawnInitialFleet();
   }
 
+  private rebuildActiveTrafficCache(): void {
+    this.activeTrafficCache = this.vehicles.filter((v) => !v.claimed);
+  }
+
   setGraphicsPreset(preset: GraphicsPresetProfile): void {
     const nextTarget = getTierVehicleBudget(preset.tier);
     this.targetCount = nextTarget;
     for (let i = 0; i < this.vehicles.length; i++) {
-      this.vehicles[i].lod.visible = i < nextTarget;
+      const v = this.vehicles[i];
+      v.lod.visible = !v.claimed && i < nextTarget;
     }
   }
 
   getActiveVehicleCount(): number {
     let count = 0;
     for (let i = 0; i < this.vehicles.length; i++) {
-      if (this.vehicles[i].lod.visible) count++;
+      const v = this.vehicles[i];
+      if (!v.claimed && v.lod.visible) count++;
     }
     return count;
   }
@@ -338,7 +359,7 @@ export class TrafficSystem {
   }
 
   /**
-   * Exposes live vehicle positions/headings for pedestrian yielding without allocations.
+   * Exposes live unclaimed vehicle positions/headings for pedestrian & player yielding without allocations.
    */
   getTrafficSnapshots(): ReadonlyArray<{
     id: string;
@@ -349,17 +370,17 @@ export class TrafficSystem {
     length: number;
     width: number;
   }> {
-    return this.vehicles;
+    return this.activeTrafficCache;
   }
 
   /**
-   * Future Phase 7 drivable vehicle & VehicleController entry/ownership contract.
+   * Phase 7 drivable vehicle and VehicleController entry/ownership contract.
    */
   getPhase7VehicleDescriptors(): TrafficVehiclePhase7Descriptor[] {
     const out: TrafficVehiclePhase7Descriptor[] = [];
     for (let i = 0; i < this.vehicles.length; i++) {
       const v = this.vehicles[i];
-      if (!v.lod.visible) continue;
+      if (v.claimed || !v.lod.visible) continue;
       const meta = VEHICLE_BLUEPRINT_META[v.modelId];
       out.push({
         id: v.id,
@@ -375,6 +396,59 @@ export class TrafficSystem {
       });
     }
     return out;
+  }
+
+  /**
+   * Claims an NPC traffic vehicle for player control, cleanly removing it from NPC lane simulation
+   * and handing off its THREE.LOD without creating a duplicate vehicle model.
+   */
+  claimTrafficVehicle(id: string): ClaimedTrafficVehicle | null {
+    for (let i = 0; i < this.vehicles.length; i++) {
+      const v = this.vehicles[i];
+      if (v.id !== id || v.claimed) continue;
+      v.claimed = true;
+      v.lod.visible = true;
+      this.root.remove(v.lod);
+      const npcDriver = v.lod.userData?.npcDriverGroup as THREE.Group | null | undefined;
+      if (npcDriver) {
+        npcDriver.visible = false;
+      }
+      this.rebuildActiveTrafficCache();
+      return {
+        id: v.id,
+        modelId: v.modelId,
+        colorHex: v.colorHex,
+        x: v.x,
+        y: v.y,
+        z: v.z,
+        heading: v.heading,
+        speedMps: v.speed,
+        lod: v.lod,
+      };
+    }
+    return null;
+  }
+
+  resetClaimedTrafficVehicles(): void {
+    let anyChanged = false;
+    for (let i = 0; i < this.vehicles.length; i++) {
+      const v = this.vehicles[i];
+      if (!v.claimed) continue;
+      v.claimed = false;
+      v.speed = 0;
+      const npcDriver = v.lod.userData?.npcDriverGroup as THREE.Group | null | undefined;
+      if (npcDriver) {
+        npcDriver.visible = true;
+      }
+      v.lod.position.set(v.x, v.y, v.z);
+      v.lod.rotation.y = v.heading;
+      v.lod.visible = i < this.targetCount;
+      this.root.add(v.lod);
+      anyChanged = true;
+    }
+    if (anyChanged) {
+      this.rebuildActiveTrafficCache();
+    }
   }
 
   private spawnInitialFleet(): void {
@@ -450,6 +524,7 @@ export class TrafficSystem {
       this.vehicles.push({
         id: `traffic_${i}_${modelId}`,
         modelId,
+        colorHex,
         lod,
         wheels,
         length: meta.length,
@@ -481,8 +556,10 @@ export class TrafficSystem {
         queuedTimeSec: 0,
         wheelSpinAngle: 0,
         seed: i,
+        claimed: false,
       });
     }
+    this.rebuildActiveTrafficCache();
   }
 
   update(
@@ -494,12 +571,16 @@ export class TrafficSystem {
     pedestrians: ReadonlyArray<{ x: number; z: number }>,
     playerPos?: { x: number; z: number },
     onHorn?: (ev: TrafficHornEvent) => void,
+    extraVehicles?: ReadonlyArray<{ x: number; z: number; width: number; length: number }>,
   ): void {
     const safeDt = Math.min(dt, 0.05);
     this.globalHornCooldownSec = Math.max(0, this.globalHornCooldownSec - safeDt);
 
     for (let i = 0; i < this.vehicles.length; i++) {
       const v = this.vehicles[i];
+      if (v.claimed) {
+        continue;
+      }
       if (i >= this.targetCount) {
         v.lod.visible = false;
         continue;
@@ -533,8 +614,9 @@ export class TrafficSystem {
 
       // Lead vehicle spacing check along same direction
       for (let j = 0; j < this.vehicles.length; j++) {
-        if (i === j || j >= this.targetCount || !this.vehicles[j].lod.visible) continue;
+        if (i === j || j >= this.targetCount) continue;
         const other = this.vehicles[j];
+        if (other.claimed || !other.lod.visible) continue;
         const dx = other.x - v.x;
         const dz = other.z - v.z;
         const dSq = dx * dx + dz * dz;
@@ -554,6 +636,32 @@ export class TrafficSystem {
             const ratio = (forwardDist - minGap) / 8.5;
             desiredSpeed = Math.min(desiredSpeed, Math.max(1.2, other.speed * (0.6 + 0.4 * ratio)));
             obstacleAhead = true;
+          }
+        }
+      }
+
+      // Yield to player-controlled / player-parked world vehicles on the road
+      if (extraVehicles && extraVehicles.length > 0 && distToFocus < 160) {
+        for (let k = 0; k < extraVehicles.length; k++) {
+          const pv = extraVehicles[k];
+          const dx = pv.x - v.x;
+          const dz = pv.z - v.z;
+          if (dx * dx + dz * dz > 440) continue;
+          const forwardDist = dx * fwdX + dz * fwdZ;
+          if (forwardDist <= 0.2) continue;
+          const sideDist = Math.abs(dx * fwdZ - dz * fwdX);
+          const combinedHalfW = (v.width + pv.width) * 0.5 + 0.55;
+          if (sideDist < combinedHalfW) {
+            const minGap = (v.length + pv.length) * 0.5 + 3.0;
+            if (forwardDist < minGap) {
+              desiredSpeed = 0;
+              obstacleAhead = true;
+              leadQueueTrigger = true;
+              break;
+            } else if (forwardDist < minGap + 7.5) {
+              desiredSpeed = Math.min(desiredSpeed, 2.0);
+              obstacleAhead = true;
+            }
           }
         }
       }

@@ -58,6 +58,11 @@ export class AudioManager {
   private strideAccumulator = 0;
   private duckTimeoutId: number | null = null;
 
+  private drivingEngineLoop: { setThrottle: (rpmNorm: number) => void; stop: () => void } | null = null;
+  private drivingEngineKind: VehicleAudioKind | null = null;
+  private drivingScreechCooldownSec = 0;
+  private drivingCollisionCooldownSec = 0;
+
   constructor(logger?: Logger) {
     this.logger = logger;
   }
@@ -134,6 +139,10 @@ export class AudioManager {
   handleLifecycle(mode: GameModeState, documentHidden: boolean): void {
     const shouldSuspend = documentHidden || mode === 'paused' || mode === 'context_lost' || mode === 'error';
     this.suspended = shouldSuspend;
+
+    if (shouldSuspend || mode === 'title') {
+      this.stopDrivingAudio();
+    }
 
     if (!this.ctx) return;
 
@@ -275,6 +284,71 @@ export class AudioManager {
     this.soundscapes?.playVehicleEvent(kind, event, pan, distanceGainScale);
   }
 
+  updateDrivingAudio(
+    dt: number,
+    driving: {
+      audioKind: VehicleAudioKind;
+      rpmNormalized: number;
+      speedMps: number;
+      isBraking: boolean;
+      isDrifting: boolean;
+    } | null,
+  ): void {
+    this.drivingScreechCooldownSec = Math.max(0, this.drivingScreechCooldownSec - dt);
+    this.drivingCollisionCooldownSec = Math.max(0, this.drivingCollisionCooldownSec - dt);
+
+    if (!driving || !this.ctx || !this.unlocked || this.suspended || !this.soundscapes) {
+      this.stopDrivingAudio();
+      return;
+    }
+
+    if (!this.drivingEngineLoop || this.drivingEngineKind !== driving.audioKind) {
+      this.stopDrivingAudio();
+      this.drivingEngineLoop = this.soundscapes.createVehicleEngineLoop(driving.audioKind);
+      this.drivingEngineKind = driving.audioKind;
+    }
+
+    this.drivingEngineLoop.setThrottle(driving.rpmNormalized);
+
+    if (
+      (driving.isDrifting || (driving.isBraking && driving.speedMps > 6.5)) &&
+      this.drivingScreechCooldownSec <= 0
+    ) {
+      this.drivingScreechCooldownSec = 0.42;
+      this.soundscapes.playVehicleEvent(
+        driving.audioKind,
+        driving.isDrifting ? 'tire_screech' : 'brake',
+        0,
+        0.55,
+      );
+    }
+  }
+
+  playDrivingHorn(kind: VehicleAudioKind): void {
+    if (!this.ctx || !this.unlocked || this.suspended) return;
+    this.soundscapes?.playVehicleEvent(kind, 'horn', 0, 0.95);
+  }
+
+  playDrivingCollision(kind: VehicleAudioKind, impactSpeedMps: number): void {
+    if (!this.ctx || !this.unlocked || this.suspended) return;
+    if (this.drivingCollisionCooldownSec > 0) return;
+    this.drivingCollisionCooldownSec = 0.28;
+    const scale = Math.max(0.25, Math.min(1.0, impactSpeedMps / 14));
+    this.soundscapes?.playVehicleEvent(kind, 'collision', 0, scale);
+  }
+
+  stopDrivingAudio(): void {
+    if (this.drivingEngineLoop) {
+      this.drivingEngineLoop.stop();
+      this.drivingEngineLoop = null;
+      this.drivingEngineKind = null;
+    }
+  }
+
+  hasActiveDrivingAudioLoop(): boolean {
+    return this.drivingEngineLoop !== null;
+  }
+
   playVehicleHornSpatial(
     kind: VehicleAudioKind,
     vehicleX: number,
@@ -325,6 +399,7 @@ export class AudioManager {
   }
 
   dispose(): void {
+    this.stopDrivingAudio();
     if (this.duckTimeoutId !== null && typeof window !== 'undefined') {
       window.clearTimeout(this.duckTimeoutId);
       this.duckTimeoutId = null;

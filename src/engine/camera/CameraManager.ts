@@ -5,6 +5,17 @@ import type { CameraRigMode } from '../types.ts';
 
 export type ThirdPersonCameraPreset = 'close' | 'standard' | 'wide';
 
+export interface VehicleCameraContext {
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  speedMps: number;
+  length: number;
+  height: number;
+  isReversing?: boolean;
+}
+
 interface CameraPresetConfig {
   distance: number;
   pitch: number;
@@ -17,8 +28,21 @@ const CAMERA_PRESET_CONFIGS: Record<ThirdPersonCameraPreset, CameraPresetConfig>
   wide: { distance: 9.8, pitch: 0.34, focusHeight: 1.4 },
 };
 
+const VEHICLE_PRESET_CONFIGS: Record<ThirdPersonCameraPreset, CameraPresetConfig> = {
+  close: { distance: 5.4, pitch: 0.22, focusHeight: 1.15 },
+  standard: { distance: 7.4, pitch: 0.25, focusHeight: 1.35 },
+  wide: { distance: 10.6, pitch: 0.3, focusHeight: 1.65 },
+};
+
 const _targetOffset = new THREE.Vector3();
 const _desiredPos = new THREE.Vector3();
+
+function normalizeAngle(angle: number): number {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
 
 function intersectRayAabb3D(
   ox: number,
@@ -77,6 +101,7 @@ export class CameraManager {
   private targetYaw = -Math.PI * 0.35;
   private targetPitch = 0.24;
   private targetDistance = 42;
+  private manualLookCooldownSec = 0;
 
   private readonly focusPoint = new THREE.Vector3(8, 2.6, 0);
   private readonly targetFocus = new THREE.Vector3(8, 2.6, 0);
@@ -104,6 +129,9 @@ export class CameraManager {
     if (this.mode === 'free_inspect') {
       const cfg = CAMERA_PRESET_CONFIGS[this.thirdPersonPreset];
       this.targetDistance = cfg.distance * this.distanceScale;
+    } else if (this.mode === 'vehicle_chase') {
+      const cfg = VEHICLE_PRESET_CONFIGS[this.thirdPersonPreset];
+      this.targetDistance = cfg.distance * this.distanceScale;
     }
   }
 
@@ -118,6 +146,11 @@ export class CameraManager {
       this.targetDistance = 44;
       this.collisionDistance = 44;
       this.targetFocus.set(8, 2.8, 0);
+    } else if (mode === 'vehicle_chase') {
+      const cfg = VEHICLE_PRESET_CONFIGS[this.thirdPersonPreset];
+      this.targetPitch = cfg.pitch;
+      this.targetDistance = cfg.distance * this.distanceScale;
+      this.manualLookCooldownSec = 0;
     } else {
       const cfg = CAMERA_PRESET_CONFIGS[this.thirdPersonPreset];
       this.targetPitch = cfg.pitch;
@@ -129,6 +162,10 @@ export class CameraManager {
     this.thirdPersonPreset = preset;
     if (this.mode === 'free_inspect') {
       const cfg = CAMERA_PRESET_CONFIGS[preset];
+      this.targetPitch = cfg.pitch;
+      this.targetDistance = cfg.distance * this.distanceScale;
+    } else if (this.mode === 'vehicle_chase') {
+      const cfg = VEHICLE_PRESET_CONFIGS[preset];
       this.targetPitch = cfg.pitch;
       this.targetDistance = cfg.distance * this.distanceScale;
     }
@@ -172,7 +209,10 @@ export class CameraManager {
   }
 
   snapToTarget(pos: THREE.Vector3, yaw?: number): void {
-    const focusH = CAMERA_PRESET_CONFIGS[this.thirdPersonPreset].focusHeight;
+    const focusH =
+      this.mode === 'vehicle_chase'
+        ? VEHICLE_PRESET_CONFIGS[this.thirdPersonPreset].focusHeight
+        : CAMERA_PRESET_CONFIGS[this.thirdPersonPreset].focusHeight;
     this.focusPoint.set(pos.x, pos.y + focusH, pos.z);
     this.targetFocus.copy(this.focusPoint);
     if (yaw !== undefined) {
@@ -187,13 +227,63 @@ export class CameraManager {
 
   /**
    * Updates camera independently of movement joystick/WASD.
-   * Handles smooth target following, touch/mouse look, zoom, and wall/ground collision avoidance.
+   * Handles smooth target following, vehicle speed-reactive chase framing,
+   * touch/mouse look, zoom, and wall/ground collision avoidance.
    */
-  update(dt: number, input: InputFrameState, playerPos?: THREE.Vector3): void {
+  update(
+    dt: number,
+    input: InputFrameState,
+    playerPos?: THREE.Vector3,
+    vehicleCtx?: VehicleCameraContext | null,
+  ): void {
     const safeDt = Math.max(1e-4, dt);
     if (this.mode === 'title_orbit') {
       this.targetYaw += safeDt * 0.085;
       this.targetFocus.set(8, 2.8, 0);
+    } else if (this.mode === 'vehicle_chase' && vehicleCtx) {
+      const lookScale = 0.65 + 0.35 * this.motionSensitivity;
+      const hadLook = Math.abs(input.lookDeltaX) > 0.01 || Math.abs(input.lookDeltaY) > 0.01;
+      if (hadLook) {
+        this.manualLookCooldownSec = 1.6;
+        this.targetYaw -= input.lookDeltaX * 0.0058 * lookScale;
+        this.targetPitch = THREE.MathUtils.clamp(
+          this.targetPitch + input.lookDeltaY * 0.0046 * lookScale,
+          0.06,
+          0.88,
+        );
+      } else {
+        this.manualLookCooldownSec = Math.max(0, this.manualLookCooldownSec - safeDt);
+      }
+
+      const cfg = VEHICLE_PRESET_CONFIGS[this.thirdPersonPreset];
+      const sizeBoost = Math.max(0, (vehicleCtx.length - 4.0) * 0.55);
+      const speedPullback = Math.min(2.4, vehicleCtx.speedMps * 0.095);
+      const desiredChaseDist = THREE.MathUtils.clamp(
+        (cfg.distance + sizeBoost) * this.distanceScale + speedPullback,
+        3.8,
+        18,
+      );
+      if (Math.abs(input.zoomDelta) > 0.001) {
+        this.targetDistance = THREE.MathUtils.clamp(
+          this.targetDistance + input.zoomDelta * 1.4,
+          3.8,
+          18,
+        );
+      } else {
+        this.targetDistance = THREE.MathUtils.damp(this.targetDistance, desiredChaseDist, 5.5, safeDt);
+      }
+
+      // Gently re-align behind vehicle heading while moving without fighting player's manual look
+      const desiredFollowYaw = vehicleCtx.heading + Math.PI;
+      if (this.manualLookCooldownSec <= 0 && vehicleCtx.speedMps > 0.8) {
+        const alignLambda = vehicleCtx.isReversing ? 1.2 : 3.2;
+        const deltaYaw = normalizeAngle(desiredFollowYaw - this.targetYaw);
+        this.targetYaw += deltaYaw * (1 - Math.exp(-alignLambda * safeDt));
+        this.targetPitch = THREE.MathUtils.damp(this.targetPitch, cfg.pitch, 2.2, safeDt);
+      }
+
+      const vehicleFocusH = Math.max(cfg.focusHeight, vehicleCtx.height * 0.52);
+      this.targetFocus.set(vehicleCtx.x, vehicleCtx.y + vehicleFocusH, vehicleCtx.z);
     } else {
       const lookScale = 0.65 + 0.35 * this.motionSensitivity;
       this.targetYaw -= input.lookDeltaX * 0.0058 * lookScale;
@@ -215,7 +305,8 @@ export class CameraManager {
     }
 
     const dampLambda = 6.5 + 4.5 * this.motionSensitivity;
-    this.orbitYaw = THREE.MathUtils.damp(this.orbitYaw, this.targetYaw, dampLambda, safeDt);
+    const yawDiff = normalizeAngle(this.targetYaw - this.orbitYaw);
+    this.orbitYaw = normalizeAngle(this.orbitYaw + yawDiff * (1 - Math.exp(-dampLambda * safeDt)));
     this.orbitPitch = THREE.MathUtils.damp(this.orbitPitch, this.targetPitch, dampLambda, safeDt);
     this.orbitDistance = THREE.MathUtils.damp(this.orbitDistance, this.targetDistance, dampLambda, safeDt);
     this.focusPoint.x = THREE.MathUtils.damp(this.focusPoint.x, this.targetFocus.x, 14, safeDt);
@@ -226,7 +317,7 @@ export class CameraManager {
   }
 
   private computeSafeDistance(desiredDist: number): number {
-    if (this.mode !== 'free_inspect' || this.colliders.length === 0) {
+    if ((this.mode !== 'free_inspect' && this.mode !== 'vehicle_chase') || this.colliders.length === 0) {
       return desiredDist;
     }
 
@@ -292,7 +383,10 @@ export class CameraManager {
         dt >= 1 ? safeTargetDist : THREE.MathUtils.damp(this.collisionDistance, safeTargetDist, 7.5, dt);
     }
 
-    const activeDist = this.mode === 'free_inspect' ? this.collisionDistance : this.orbitDistance;
+    const activeDist =
+      this.mode === 'free_inspect' || this.mode === 'vehicle_chase'
+        ? this.collisionDistance
+        : this.orbitDistance;
     const horiz = Math.cos(this.orbitPitch) * activeDist;
     const vert = Math.sin(this.orbitPitch) * activeDist;
 

@@ -25,7 +25,7 @@ export type VehicleAudioKind =
   | 'truck'
   | 'boat';
 
-export type VehicleSfxEvent = 'horn' | 'brake' | 'tire_screech' | 'accel' | 'passby';
+export type VehicleSfxEvent = 'horn' | 'brake' | 'tire_screech' | 'accel' | 'passby' | 'collision';
 
 export type TeaShopSfxEvent = 'tea_pour' | 'glass_clink' | 'spoon_stir' | 'snack_fry';
 

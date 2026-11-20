@@ -12,8 +12,16 @@ export type ArjunAnimationState =
   | 'stop'
   | 'airborne';
 
+export interface SeatedVehiclePoseInput {
+  category: 'car' | 'suv' | 'scooter' | 'motorcycle' | 'auto_rickshaw' | 'bus' | 'delivery' | 'truck';
+  steerNorm: number;
+  leanAngleRad: number;
+  speedMps: number;
+  leanForwardRad: number;
+}
+
 export interface ArjunAnimatorSnapshot {
-  activeState: ArjunAnimationState;
+  activeState: ArjunAnimationState | 'driving';
   gaitPhase: number;
   blendWeights: {
     idle: number;
@@ -26,10 +34,10 @@ export interface ArjunAnimatorSnapshot {
 /**
  * State-blended procedural animator for Arjun's hierarchical character rig.
  * Smoothly blends idle breathing, starting acceleration lean, walk, run, sprint,
- * cornering bank/head lead, stopping weight settle, and airborne/curb transitions.
+ * cornering bank/head lead, stopping weight settle, airborne transitions, and seated riding.
  */
 export class ArjunAnimator {
-  private activeState: ArjunAnimationState = 'idle';
+  private activeState: ArjunAnimationState | 'driving' = 'idle';
   private idleTime = 0;
   private gaitPhase = 0;
 
@@ -56,9 +64,82 @@ export class ArjunAnimator {
     };
   }
 
-  update(rig: ArjunCharacterRig, state: PlayerMoveResult, dt: number): void {
+  update(
+    rig: ArjunCharacterRig,
+    state: PlayerMoveResult,
+    dt: number,
+    seatedVehicle?: SeatedVehiclePoseInput | null,
+  ): void {
     const safeDt = Math.min(Math.max(dt, 0), 0.05);
     this.idleTime += safeDt;
+
+    if (seatedVehicle) {
+      this.activeState = 'driving';
+      const isScooter = seatedVehicle.category === 'scooter';
+      const isAuto = seatedVehicle.category === 'auto_rickshaw';
+      const hipBend = isScooter ? -1.08 : isAuto ? -1.16 : -0.82;
+      const kneeBend = isScooter ? 1.18 : isAuto ? 1.25 : 1.05;
+      const steerYaw = seatedVehicle.steerNorm * 0.22;
+
+      rig.pelvisGroup.position.y = THREE.MathUtils.damp(rig.pelvisGroup.position.y, 0.88, 16, safeDt);
+      rig.pelvisGroup.rotation.y = THREE.MathUtils.damp(rig.pelvisGroup.rotation.y, 0, 16, safeDt);
+      rig.pelvisGroup.rotation.z = THREE.MathUtils.damp(rig.pelvisGroup.rotation.z, 0, 16, safeDt);
+
+      rig.spineGroup.rotation.x = THREE.MathUtils.damp(
+        rig.spineGroup.rotation.x,
+        seatedVehicle.leanForwardRad,
+        14,
+        safeDt,
+      );
+      rig.spineGroup.rotation.z = THREE.MathUtils.damp(
+        rig.spineGroup.rotation.z,
+        seatedVehicle.leanAngleRad * 0.28,
+        12,
+        safeDt,
+      );
+      rig.chestGroup.rotation.x = THREE.MathUtils.damp(
+        rig.chestGroup.rotation.x,
+        seatedVehicle.leanForwardRad * 0.6,
+        14,
+        safeDt,
+      );
+      rig.chestGroup.rotation.y = THREE.MathUtils.damp(rig.chestGroup.rotation.y, steerYaw * 0.4, 12, safeDt);
+
+      rig.headGroup.rotation.y = THREE.MathUtils.damp(rig.headGroup.rotation.y, -steerYaw * 0.7, 10, safeDt);
+      rig.headGroup.rotation.x = THREE.MathUtils.damp(
+        rig.headGroup.rotation.x,
+        -seatedVehicle.leanForwardRad * 0.85,
+        12,
+        safeDt,
+      );
+
+      rig.hipL.rotation.x = THREE.MathUtils.damp(rig.hipL.rotation.x, hipBend, 16, safeDt);
+      rig.hipR.rotation.x = THREE.MathUtils.damp(rig.hipR.rotation.x, hipBend, 16, safeDt);
+      rig.kneeL.rotation.x = THREE.MathUtils.damp(rig.kneeL.rotation.x, kneeBend, 16, safeDt);
+      rig.kneeR.rotation.x = THREE.MathUtils.damp(rig.kneeR.rotation.x, kneeBend, 16, safeDt);
+      rig.ankleL.rotation.x = THREE.MathUtils.damp(rig.ankleL.rotation.x, -0.15, 14, safeDt);
+      rig.ankleR.rotation.x = THREE.MathUtils.damp(rig.ankleR.rotation.x, -0.15, 14, safeDt);
+
+      const armReach = isAuto ? -0.95 : -0.82;
+      rig.shoulderL.rotation.x = THREE.MathUtils.damp(
+        rig.shoulderL.rotation.x,
+        armReach + steerYaw * 0.35,
+        16,
+        safeDt,
+      );
+      rig.shoulderR.rotation.x = THREE.MathUtils.damp(
+        rig.shoulderR.rotation.x,
+        armReach - steerYaw * 0.35,
+        16,
+        safeDt,
+      );
+      rig.shoulderL.rotation.z = THREE.MathUtils.damp(rig.shoulderL.rotation.z, 0.16, 14, safeDt);
+      rig.shoulderR.rotation.z = THREE.MathUtils.damp(rig.shoulderR.rotation.z, -0.16, 14, safeDt);
+      rig.elbowL.rotation.x = THREE.MathUtils.damp(rig.elbowL.rotation.x, -0.45, 16, safeDt);
+      rig.elbowR.rotation.x = THREE.MathUtils.damp(rig.elbowR.rotation.x, -0.45, 16, safeDt);
+      rig.contactShadow.scale.setScalar(0.8);
+      return;
+    }
 
     const speed = state.speed;
     const isMoving = state.isMoving || speed > 0.14;

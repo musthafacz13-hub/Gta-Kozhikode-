@@ -10,6 +10,7 @@ import type {
 } from './world/BuildingSystem.ts';
 import type { KozhikodeBiomeType } from './world/GeoProjection.ts';
 import type { RoadRouteWaypoint } from './world/RoadNetworkGraph.ts';
+import type { VehicleFleetCategory, VehicleModelId } from './world/VehicleVisualFactory.ts';
 
 export type GameModeState = 'booting' | 'title' | 'playing' | 'paused' | 'context_lost' | 'error';
 
@@ -59,6 +60,54 @@ export interface GameSettings {
 
 export type SaveSlotType = 'manual' | 'autosave' | 'recovery';
 
+export type VehicleDamageState = 'undamaged' | 'minor' | 'moderate' | 'severe';
+
+export type VehicleGearState = 'PARKED' | 'DRIVE' | 'REVERSE' | 'BRAKE' | 'HANDBRAKE';
+
+export type VehicleGroundSurface = 'asphalt' | 'sidewalk' | 'sand' | 'grass' | 'offroad';
+
+export interface SavedVehicleRecord {
+  id: string;
+  sourceKind: 'parked_chunk' | 'traffic' | 'persisted';
+  sourceId: string;
+  modelId: VehicleModelId;
+  colorHex: number;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  damageHealth: number;
+  damageState: VehicleDamageState;
+}
+
+export interface SavedVehiclesState {
+  schemaVersion: number;
+  activeVehicleId: string | null;
+  vehicles: SavedVehicleRecord[];
+  updatedAt: number;
+}
+
+export interface ActiveVehicleHudState {
+  isDriving: boolean;
+  isEntering: boolean;
+  vehicleId: string;
+  modelId: VehicleModelId;
+  displayName: string;
+  category: VehicleFleetCategory;
+  speedKmh: number;
+  speedMps: number;
+  signedSpeedMps: number;
+  gear: VehicleGearState;
+  steerNorm: number;
+  throttleNorm: number;
+  brakeNorm: number;
+  handbrakeActive: boolean;
+  damageHealth: number;
+  damageState: VehicleDamageState;
+  leanAngleRad: number;
+  groundSurface: VehicleGroundSurface;
+}
+
 export interface SaveSlotMeta {
   slotId: string;
   slotType: SaveSlotType;
@@ -68,6 +117,7 @@ export interface SaveSlotMeta {
   playtimeSeconds: number;
   savedAt: number;
   cameraPreset: string;
+  vehicleState?: SavedVehiclesState;
 }
 
 export interface RenderCapabilitiesReport {
@@ -106,7 +156,7 @@ export interface LogEntry {
   detail?: string;
 }
 
-export type CameraRigMode = 'title_orbit' | 'free_inspect';
+export type CameraRigMode = 'title_orbit' | 'free_inspect' | 'vehicle_chase';
 
 export interface NearbyBuildingSummary {
   id: string;
@@ -173,6 +223,7 @@ export interface EngineHudSnapshot {
   homeDistanceMeters: number;
   nearbyBuilding?: NearbyBuildingSummary | null;
   nearbyInteraction?: ContextualInteractionTarget | null;
+  vehicle?: ActiveVehicleHudState | null;
   activeDestination: ActiveDestinationState | null;
   ambientStats?: {
     activeVehicles: number;

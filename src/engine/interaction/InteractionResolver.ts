@@ -5,6 +5,7 @@ export type InteractionActionKind =
   | 'open_door'
   | 'talk'
   | 'enter_vehicle'
+  | 'exit_vehicle'
   | 'use_shop'
   | 'drink_tea'
   | 'sit'
@@ -25,11 +26,21 @@ export interface NearbyNpcCandidate {
   distanceMeters: number;
 }
 
+export interface NearbyVehicleCandidate {
+  id: string;
+  displayName: string;
+  distanceMeters: number;
+  canEnter: boolean;
+  reason?: string;
+}
+
 export interface ResolveInteractionInput {
   nearbyBuilding: NearbyBuildingSummary | null;
   nearHome: boolean;
   homeDistanceMeters: number;
   nearbyNpc?: NearbyNpcCandidate | null;
+  nearbyVehicle?: NearbyVehicleCandidate | null;
+  isDriving?: boolean;
 }
 
 /**
@@ -40,7 +51,32 @@ export interface ResolveInteractionInput {
 export function resolveContextualInteraction(
   input: ResolveInteractionInput,
 ): ContextualInteractionTarget | null {
-  const { nearbyBuilding, nearHome, homeDistanceMeters, nearbyNpc } = input;
+  const {
+    nearbyBuilding,
+    nearHome,
+    homeDistanceMeters,
+    nearbyNpc,
+    nearbyVehicle,
+    isDriving,
+  } = input;
+
+  if (isDriving) {
+    return null;
+  }
+
+  if (
+    nearbyVehicle &&
+    nearbyVehicle.canEnter &&
+    (!nearbyBuilding || nearbyVehicle.distanceMeters <= nearbyBuilding.distanceMeters + 0.6)
+  ) {
+    return {
+      id: nearbyVehicle.id,
+      kind: 'enter_vehicle',
+      actionLabel: 'Enter Vehicle',
+      targetName: nearbyVehicle.displayName,
+      distanceMeters: nearbyVehicle.distanceMeters,
+    };
+  }
 
   if (nearbyBuilding) {
     const isHome = nearbyBuilding.ownershipStatus === 'protagonist_home';

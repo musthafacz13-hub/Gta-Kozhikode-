@@ -5,7 +5,16 @@ export type InputAction =
   | 'interact'
   | 'pause'
   | 'toggle_camera'
-  | 'map';
+  | 'map'
+  | 'horn';
+
+export interface InputVehicleFrameState {
+  throttle: number;
+  brakeReverse: number;
+  steer: number;
+  handbrake: boolean;
+  hornJustPressed: boolean;
+}
 
 export interface InputFrameState {
   moveX: number;
@@ -15,6 +24,7 @@ export interface InputFrameState {
   zoomDelta: number;
   held: Record<InputAction, boolean>;
   justPressed: Record<InputAction, boolean>;
+  vehicle: InputVehicleFrameState;
 }
 
 const DEFAULT_KEY_TO_ACTION: Record<string, InputAction> = {
@@ -27,6 +37,7 @@ const DEFAULT_KEY_TO_ACTION: Record<string, InputAction> = {
   Escape: 'pause',
   KeyV: 'toggle_camera',
   KeyM: 'map',
+  KeyH: 'horn',
 };
 
 export class InputManager {
@@ -41,6 +52,7 @@ export class InputManager {
     pause: false,
     toggle_camera: false,
     map: false,
+    horn: false,
   };
   private readonly pendingJustPressed: Record<InputAction, boolean> = {
     sprint: false,
@@ -50,6 +62,7 @@ export class InputManager {
     pause: false,
     toggle_camera: false,
     map: false,
+    horn: false,
   };
 
   private lookDeltaX = 0;
@@ -57,6 +70,11 @@ export class InputManager {
   private zoomDelta = 0;
   private virtualMoveX = 0;
   private virtualMoveY = 0;
+
+  private virtualVehicleSteer = 0;
+  private virtualVehicleThrottle = 0;
+  private virtualVehicleBrakeReverse = 0;
+  private virtualVehicleHandbrake = false;
 
   private cameraTouchSensitivity = 1.0;
   private mouseSensitivity = 1.0;
@@ -364,6 +382,38 @@ export class InputManager {
     }
   }
 
+  setVehicleVirtualControls(patch: {
+    steer?: number;
+    throttle?: number;
+    brakeReverse?: number;
+    handbrake?: boolean;
+  }): void {
+    if (patch.steer !== undefined) {
+      const s = Number.isFinite(patch.steer) ? Math.max(-1, Math.min(1, patch.steer)) : 0;
+      this.virtualVehicleSteer = Math.abs(s) < 0.04 ? 0 : s;
+    }
+    if (patch.throttle !== undefined) {
+      this.virtualVehicleThrottle = Number.isFinite(patch.throttle)
+        ? Math.max(0, Math.min(1, patch.throttle))
+        : 0;
+    }
+    if (patch.brakeReverse !== undefined) {
+      this.virtualVehicleBrakeReverse = Number.isFinite(patch.brakeReverse)
+        ? Math.max(0, Math.min(1, patch.brakeReverse))
+        : 0;
+    }
+    if (patch.handbrake !== undefined) {
+      this.virtualVehicleHandbrake = Boolean(patch.handbrake);
+    }
+  }
+
+  clearVehicleVirtualControls(): void {
+    this.virtualVehicleSteer = 0;
+    this.virtualVehicleThrottle = 0;
+    this.virtualVehicleBrakeReverse = 0;
+    this.virtualVehicleHandbrake = false;
+  }
+
   getActiveLookPointerId(): number | null {
     return this.lookPointerId;
   }
@@ -399,6 +449,7 @@ export class InputManager {
     this.zoomDelta = 0;
     this.virtualMoveX = 0;
     this.virtualMoveY = 0;
+    this.clearVehicleVirtualControls();
     for (const key of Object.keys(this.heldActions) as InputAction[]) {
       this.heldActions[key] = false;
       this.pendingJustPressed[key] = false;
@@ -421,6 +472,13 @@ export class InputManager {
       moveY /= len;
     }
 
+    const keyThrottle = this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp') ? 1 : 0;
+    const keyBrakeReverse = this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown') ? 1 : 0;
+    const vehicleSteer = keyX !== 0 ? keyX : this.virtualVehicleSteer;
+    const vehicleThrottle = Math.max(keyThrottle, this.virtualVehicleThrottle);
+    const vehicleBrakeReverse = Math.max(keyBrakeReverse, this.virtualVehicleBrakeReverse);
+    const vehicleHandbrake = Boolean(this.heldActions.jump || this.virtualVehicleHandbrake);
+
     const state: InputFrameState = {
       moveX,
       moveY,
@@ -429,6 +487,13 @@ export class InputManager {
       zoomDelta: this.zoomDelta,
       held: { ...this.heldActions },
       justPressed: { ...this.pendingJustPressed },
+      vehicle: {
+        throttle: vehicleThrottle,
+        brakeReverse: vehicleBrakeReverse,
+        steer: vehicleSteer,
+        handbrake: vehicleHandbrake,
+        hornJustPressed: this.pendingJustPressed.horn,
+      },
     };
 
     this.lookDeltaX = 0;
