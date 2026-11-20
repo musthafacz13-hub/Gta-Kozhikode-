@@ -11,9 +11,19 @@ export interface KozhikodeTexturePack {
   shopFacadeWarm: THREE.CanvasTexture;
   shopFacadeCream: THREE.CanvasTexture;
   shopFacadeTeal: THREE.CanvasTexture;
+  apartmentFacade: THREE.CanvasTexture;
+  hospitalFacade: THREE.CanvasTexture;
+  officeCurtainFacade: THREE.CanvasTexture;
   grassMap: THREE.CanvasTexture;
   waterNormalMap: THREE.CanvasTexture;
   createSignTexture: (key: string, malayalam: string, english: string, bg: string, fg: string) => THREE.CanvasTexture;
+  createRoadSignTexture: (
+    key: string,
+    routeBadge: string,
+    destinationsEn: string[],
+    destinationsMl: string,
+    bgHex: string,
+  ) => THREE.CanvasTexture;
 }
 
 export function createKozhikodeTextures(assets: AssetManager): KozhikodeTexturePack {
@@ -178,7 +188,13 @@ export function createKozhikodeTextures(assets: AssetManager): KozhikodeTextureP
     3,
   );
 
-  const buildFacadeTexture = (key: string, wallHex: string, trimHex: string): THREE.CanvasTexture =>
+  const buildFacadeTexture = (
+    key: string,
+    wallHex: string,
+    trimHex: string,
+    cols = 3,
+    coolGlass = false,
+  ): THREE.CanvasTexture =>
     assets.getOrCreateProceduralTexture(
       key,
       512,
@@ -203,29 +219,30 @@ export function createKozhikodeTextures(assets: AssetManager): KozhikodeTextureP
         ctx.fillRect(0, h * 0.48, w, 14);
         ctx.fillRect(0, h - 14, w, 14);
 
-        // Recessed upper and mid windows (3 columns x 2 floors)
-        const cols = 3;
-        const winW = 86;
+        const winW = cols >= 4 ? 64 : 86;
         const winH = 128;
+        const stepX = Math.floor((w - 56) / cols);
         for (let floor = 0; floor < 2; floor++) {
           const wy = floor === 0 ? 52 : 285;
           for (let c = 0; c < cols; c++) {
-            const wx = 44 + c * 158;
-            // Frame shadow
+            const wx = 34 + c * stepX;
             ctx.fillStyle = '#334155';
             ctx.fillRect(wx - 6, wy - 6, winW + 12, winH + 12);
-            // Warm interior / sky glass gradient
             const glassGrad = ctx.createLinearGradient(wx, wy, wx, wy + winH);
-            glassGrad.addColorStop(0, '#1e3a5f');
-            glassGrad.addColorStop(0.6, '#2b4c6f');
-            glassGrad.addColorStop(1, floor === 1 ? '#b47a3c' : '#1e293b');
+            if (coolGlass) {
+              glassGrad.addColorStop(0, '#0f3d5e');
+              glassGrad.addColorStop(0.65, '#38bdf8');
+              glassGrad.addColorStop(1, '#1e3a5f');
+            } else {
+              glassGrad.addColorStop(0, '#1e3a5f');
+              glassGrad.addColorStop(0.6, '#2b4c6f');
+              glassGrad.addColorStop(1, floor === 1 ? '#b47a3c' : '#1e293b');
+            }
             ctx.fillStyle = glassGrad;
             ctx.fillRect(wx, wy, winW, winH);
-            // Mullions
             ctx.fillStyle = '#e2e8f0';
             ctx.fillRect(wx + winW / 2 - 2, wy, 4, winH);
             ctx.fillRect(wx, wy + winH * 0.52, winW, 4);
-            // Sunshade chajja hood
             ctx.fillStyle = trimHex;
             ctx.fillRect(wx - 10, wy - 14, winW + 20, 10);
           }
@@ -238,6 +255,9 @@ export function createKozhikodeTextures(assets: AssetManager): KozhikodeTextureP
   const shopFacadeWarm = buildFacadeTexture('kzd_facade_warm', '#eadbc8', '#b45309');
   const shopFacadeCream = buildFacadeTexture('kzd_facade_cream', '#f1ece1', '#7c2d12');
   const shopFacadeTeal = buildFacadeTexture('kzd_facade_teal', '#d9e5e2', '#0f766e');
+  const apartmentFacade = buildFacadeTexture('kzd_facade_apartment', '#e5e0d5', '#475569', 4, false);
+  const hospitalFacade = buildFacadeTexture('kzd_facade_hospital', '#f1f5f9', '#0f766e', 4, true);
+  const officeCurtainFacade = buildFacadeTexture('kzd_facade_office', '#cbd5e1', '#1e293b', 4, true);
 
   const grassMap = assets.getOrCreateProceduralTexture(
     'kzd_park_grass',
@@ -313,6 +333,51 @@ export function createKozhikodeTextures(assets: AssetManager): KozhikodeTextureP
       1,
     );
 
+  const createRoadSignTexture = (
+    key: string,
+    routeBadge: string,
+    destinationsEn: string[],
+    destinationsMl: string,
+    bgHex: string,
+  ): THREE.CanvasTexture =>
+    assets.getOrCreateProceduralTexture(
+      key,
+      512,
+      256,
+      THREE.SRGBColorSpace,
+      (ctx, w, h) => {
+        ctx.fillStyle = bgHex;
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(8, 8, w - 16, h - 16);
+
+        // Route shield badge top-left
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(26, 26, 118, 44);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 24px "Barlow Condensed", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(routeBadge, 85, 48);
+
+        // Malayalam header right
+        ctx.fillStyle = '#fef3c7';
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 26px "Noto Sans Malayalam", sans-serif';
+        ctx.fillText(destinationsMl, 160, 48);
+
+        // Directional lines
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 30px "Barlow Condensed", "Plus Jakarta Sans", sans-serif';
+        destinationsEn.slice(0, 2).forEach((line, idx) => {
+          ctx.fillText(line.toUpperCase(), 30, 122 + idx * 58);
+        });
+      },
+      1,
+      1,
+    );
+
   return {
     asphaltMap,
     asphaltBump,
@@ -323,8 +388,12 @@ export function createKozhikodeTextures(assets: AssetManager): KozhikodeTextureP
     shopFacadeWarm,
     shopFacadeCream,
     shopFacadeTeal,
+    apartmentFacade,
+    hospitalFacade,
+    officeCurtainFacade,
     grassMap,
     waterNormalMap,
     createSignTexture,
+    createRoadSignTexture,
   };
 }

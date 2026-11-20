@@ -1,22 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Briefcase,
+  Armchair,
+  ArrowUp,
   Camera,
-  Car,
-  Crosshair,
+  CloudSun,
+  Coffee,
   DoorOpen,
-  Flag,
+  Hand,
   Home,
-  Lock,
   Map as MapIcon,
   MapPin,
+  MessageCircle,
   Navigation,
   Pause,
+  RotateCw,
+  Settings,
+  Store,
   Volume2,
   VolumeX,
   X,
   Zap,
 } from 'lucide-react';
+import {
+  resolveContextualInteraction,
+  type ContextualInteractionTarget,
+  type InteractionActionKind,
+} from '../engine/interaction/InteractionResolver.ts';
 import type { EngineHudSnapshot, GameSettings } from '../engine/types.ts';
 import {
   KOZHIKODE_REGIONS,
@@ -28,46 +37,81 @@ import { BottomAudioPanel } from './BottomAudioPanel.tsx';
 interface HudOverlayProps {
   snapshot: EngineHudSnapshot;
   onPause: () => void;
+  onOpenSettings?: () => void;
   onToggleCamera: () => void;
   onToggleMute: () => void;
   onUpdateSettings: (patch: Partial<GameSettings>) => void;
   onHomeInteract: () => void;
+  onBuildingInteract?: () => string | void;
   onOpenWorldMap: () => void;
   onClearDestination: () => void;
   onUiClick: () => void;
   onVirtualMove: (x: number, y: number) => void;
   onSprintHold: (held: boolean) => void;
+  onJumpTap?: () => void;
+}
+
+function renderInteractionIcon(kind: InteractionActionKind) {
+  switch (kind) {
+    case 'enter_house':
+      return <Home className="h-5 w-5" strokeWidth={2.2} />;
+    case 'drink_tea':
+      return <Coffee className="h-5 w-5" strokeWidth={2.2} />;
+    case 'use_shop':
+      return <Store className="h-5 w-5" strokeWidth={2.2} />;
+    case 'talk':
+      return <MessageCircle className="h-5 w-5" strokeWidth={2.2} />;
+    case 'sit':
+      return <Armchair className="h-5 w-5" strokeWidth={2.2} />;
+    case 'open_door':
+      return <DoorOpen className="h-5 w-5" strokeWidth={2.2} />;
+    default:
+      return <Hand className="h-5 w-5" strokeWidth={2.2} />;
+  }
 }
 
 export function HudOverlay({
   snapshot,
   onPause,
+  onOpenSettings,
   onToggleCamera,
   onToggleMute,
   onUpdateSettings,
   onHomeInteract,
+  onBuildingInteract,
   onOpenWorldMap,
   onClearDestination,
   onUiClick,
   onVirtualMove,
   onSprintHold,
+  onJumpTap,
 }: HudOverlayProps) {
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
   const joystickPointerIdRef = useRef<number | null>(null);
   const sprintPointerIdRef = useRef<number | null>(null);
+  const jumpPointerIdRef = useRef<number | null>(null);
   const onVirtualMoveRef = useRef(onVirtualMove);
   const onSprintHoldRef = useRef(onSprintHold);
   onVirtualMoveRef.current = onVirtualMove;
   onSprintHoldRef.current = onSprintHold;
 
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [joystickActive, setJoystickActive] = useState(false);
+  const [jumpPressed, setJumpPressed] = useState(false);
   const [showAudioDrawer, setShowAudioDrawer] = useState(false);
   const [hudNotice, setHudNotice] = useState<string | null>(null);
+  const [showPortraitNotice, setShowPortraitNotice] = useState(false);
 
   const showTimedNotice = (msg: string) => {
     setHudNotice(msg);
   };
+
+  useEffect(() => {
+    if (snapshot.interactionNotice?.text) {
+      setHudNotice(snapshot.interactionNotice.text);
+    }
+  }, [snapshot.interactionNotice?.id, snapshot.interactionNotice?.text]);
 
   useEffect(() => {
     if (!hudNotice) return;
@@ -76,15 +120,39 @@ export function HudOverlay({
   }, [hudNotice]);
 
   useEffect(() => {
+    const checkPortrait = () => {
+      if (typeof window === 'undefined') return;
+      const isNarrowMobile = window.innerWidth < 768 && window.innerHeight > window.innerWidth;
+      const hasTouch =
+        typeof navigator !== 'undefined' &&
+        (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+      setShowPortraitNotice(Boolean(isNarrowMobile && hasTouch));
+    };
+
+    checkPortrait();
+    window.addEventListener('resize', checkPortrait);
+    window.addEventListener('orientationchange', checkPortrait);
+    return () => {
+      window.removeEventListener('resize', checkPortrait);
+      window.removeEventListener('orientationchange', checkPortrait);
+    };
+  }, []);
+
+  useEffect(() => {
     const resetAllHudTouch = () => {
       if (joystickPointerIdRef.current !== null) {
         joystickPointerIdRef.current = null;
+        setJoystickActive(false);
         setKnobOffset({ x: 0, y: 0 });
         onVirtualMoveRef.current(0, 0);
       }
       if (sprintPointerIdRef.current !== null) {
         sprintPointerIdRef.current = null;
         onSprintHoldRef.current(false);
+      }
+      if (jumpPointerIdRef.current !== null) {
+        jumpPointerIdRef.current = null;
+        setJumpPressed(false);
       }
     };
 
@@ -95,9 +163,11 @@ export function HudOverlay({
     };
 
     window.addEventListener('blur', resetAllHudTouch);
+    window.addEventListener('orientationchange', resetAllHudTouch);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       window.removeEventListener('blur', resetAllHudTouch);
+      window.removeEventListener('orientationchange', resetAllHudTouch);
       document.removeEventListener('visibilitychange', handleVisibility);
       resetAllHudTouch();
     };
@@ -169,7 +239,10 @@ export function HudOverlay({
     }
 
     // Active A* Destination Road Route & Target Beacon
-    if (snapshot.activeDestination?.routeWaypoints && snapshot.activeDestination.routeWaypoints.length > 1) {
+    if (
+      snapshot.activeDestination?.routeWaypoints &&
+      snapshot.activeDestination.routeWaypoints.length > 1
+    ) {
       ctx.strokeStyle = '#34d399';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -217,6 +290,9 @@ export function HudOverlay({
     snapshot.activeDestination,
   ]);
 
+  const deadzone = snapshot.settings.joystickDeadzone ?? 0.08;
+  const joystickSens = snapshot.settings.joystickSensitivity ?? 1.0;
+
   const updateJoystick = (clientX: number, clientY: number) => {
     const base = joystickBaseRef.current;
     if (!base) return;
@@ -235,12 +311,18 @@ export function HudOverlay({
     const knobY = Math.sin(angle) * clampedDist;
     setKnobOffset({ x: knobX, y: knobY });
 
-    const normMag = clampedDist / maxRadius;
-    onVirtualMove(Math.cos(angle) * normMag, -Math.sin(angle) * normMag);
+    const rawMag = clampedDist / maxRadius;
+    if (rawMag < deadzone) {
+      onVirtualMove(0, 0);
+      return;
+    }
+    const rescaled = Math.min(1, ((rawMag - deadzone) / Math.max(0.01, 1 - deadzone)) * joystickSens);
+    onVirtualMove(Math.cos(angle) * rescaled, -Math.sin(angle) * rescaled);
   };
 
   const resetJoystick = () => {
     joystickPointerIdRef.current = null;
+    setJoystickActive(false);
     setKnobOffset({ x: 0, y: 0 });
     onVirtualMove(0, 0);
   };
@@ -250,7 +332,12 @@ export function HudOverlay({
     onSprintHold(false);
   };
 
-  // Compute crisp Home House marker position on circular minimap (clamped to rim when out of range)
+  const releaseJump = () => {
+    jumpPointerIdRef.current = null;
+    setJumpPressed(false);
+  };
+
+  // Compute Home icon marker coordinates on circular minimap
   const relHomeX = (PROTAGONIST_HOME_COORDS.houseX - snapshot.playerX) * 0.44;
   const relHomeZ = (PROTAGONIST_HOME_COORDS.houseZ - snapshot.playerZ) * 0.44;
   const cosYaw = Math.cos(snapshot.cameraYaw);
@@ -259,7 +346,7 @@ export function HudOverlay({
   const rotHomeY = relHomeX * sinYaw + relHomeZ * cosYaw;
   const homePixelDist = Math.hypot(rotHomeX, rotHomeY);
   const maxMarkerRadiusPct = 39;
-  const homeRadarScale = 100 / 96; // convert 96px canvas coords to %
+  const homeRadarScale = 100 / 96;
   const homeRawX = rotHomeX * homeRadarScale;
   const homeRawY = rotHomeY * homeRadarScale;
   const homeClampScale =
@@ -276,21 +363,306 @@ export function HudOverlay({
     ? 0
     : Math.round(snapshot.settings.masterVolume * 100);
 
-  return (
+  const hudScale = snapshot.settings.hudScale ?? 1.0;
+  const joyScale = (snapshot.settings.joystickSize ?? 1.0) * hudScale;
+  const btnScale = (snapshot.settings.actionButtonSize ?? 1.0) * hudScale;
+  const layout = snapshot.settings.controlLayout ?? 'standard';
+  const offsets = snapshot.settings.controlOffsets ?? {
+    joystickX: 0,
+    joystickY: 0,
+    actionsX: 0,
+    actionsY: 0,
+  };
+  const isLeftHanded = layout === 'left_handed';
+  const isCompact = layout === 'compact';
+
+  // Resolve active contextual interaction strictly from live world state (never display unavailable action)
+  const resolvedInteraction: ContextualInteractionTarget | null =
+    snapshot.nearbyInteraction !== undefined
+      ? snapshot.nearbyInteraction
+      : resolveContextualInteraction({
+          nearbyBuilding: snapshot.nearbyBuilding ?? null,
+          nearHome: snapshot.nearHome,
+          homeDistanceMeters: snapshot.homeDistanceMeters,
+        });
+
+  const isAirborne = snapshot.isGrounded === false;
+
+  const handleContextInteract = () => {
+    if (!resolvedInteraction) return;
+    if (snapshot.nearbyBuilding || resolvedInteraction.kind === 'talk') {
+      const customNotice = onBuildingInteract?.();
+      if (customNotice) {
+        showTimedNotice(customNotice);
+        return;
+      }
+    }
+    onHomeInteract();
+    showTimedNotice(`${resolvedInteraction.targetName} · ${resolvedInteraction.actionLabel}`);
+  };
+
+  const joystickDiameter = Math.round((isCompact ? 90 : 104) * joyScale);
+  const knobDiameter = Math.round(joystickDiameter * 0.42);
+  const actionBtnPx = Math.round((isCompact ? 42 : 46) * btnScale);
+  const primaryBtnPx = Math.round((isCompact ? 48 : 54) * btnScale);
+
+  const joystickCluster = (
     <div
-      className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-3 sm:p-5"
+      className="pointer-events-none relative shrink-0"
       style={{
-        opacity: snapshot.settings.hudOpacity,
-        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
-        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-        paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
-        paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+        transform: `translate3d(${offsets.joystickX}px, ${offsets.joystickY}px, 0)`,
       }}
     >
+      <div
+        ref={joystickBaseRef}
+        data-hud-control="true"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          if (joystickPointerIdRef.current !== null) return;
+          joystickPointerIdRef.current = e.pointerId;
+          setJoystickActive(true);
+          try {
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+          } catch {
+            // Ignore synthetic pointer capture errors
+          }
+          updateJoystick(e.clientX, e.clientY);
+        }}
+        onPointerMove={(e) => {
+          if (joystickPointerIdRef.current !== e.pointerId) return;
+          updateJoystick(e.clientX, e.clientY);
+        }}
+        onPointerUp={(e) => {
+          if (joystickPointerIdRef.current !== e.pointerId) return;
+          resetJoystick();
+        }}
+        onPointerCancel={(e) => {
+          if (joystickPointerIdRef.current !== e.pointerId) return;
+          resetJoystick();
+        }}
+        onLostPointerCapture={(e) => {
+          if (joystickPointerIdRef.current !== e.pointerId) return;
+          resetJoystick();
+        }}
+        role="slider"
+        aria-label="Movement Joystick"
+        aria-valuenow={Math.round(Math.hypot(knobOffset.x, knobOffset.y))}
+        style={{
+          width: `${joystickDiameter}px`,
+          height: `${joystickDiameter}px`,
+        }}
+        className={`pointer-events-auto relative flex touch-none select-none items-center justify-center rounded-full border transition-colors ${
+          joystickActive
+            ? 'border-amber-400/75 bg-slate-950/70'
+            : 'border-white/25 bg-slate-950/50'
+        }`}
+      >
+        <div
+          className={`pointer-events-none absolute inset-3 rounded-full border transition-colors ${
+            joystickActive ? 'border-amber-300/35' : 'border-white/15'
+          }`}
+        />
+        <div
+          style={{
+            width: `${knobDiameter}px`,
+            height: `${knobDiameter}px`,
+            transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
+          }}
+          className={`pointer-events-none rounded-full border shadow-md transition-colors ${
+            joystickActive
+              ? 'border-amber-300/80 bg-amber-400/45'
+              : 'border-white/45 bg-white/30'
+          }`}
+        />
+      </div>
+    </div>
+  );
+
+  const actionThumbCluster = (
+    <div
+      className={`pointer-events-auto flex shrink-0 flex-col ${
+        isLeftHanded ? 'items-start' : 'items-end'
+      } gap-2 pb-0.5`}
+      style={{
+        transform: `translate3d(${offsets.actionsX}px, ${offsets.actionsY}px, 0)`,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        {/* Context-Sensitive Interaction Button (Only rendered when an available target is in range) */}
+        {resolvedInteraction && (
+          <button
+            type="button"
+            data-hud-control="true"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={handleContextInteract}
+            aria-label={
+              resolvedInteraction.kind === 'enter_house' || snapshot.nearbyBuilding
+                ? `Interact with Home Entrance · ${resolvedInteraction.actionLabel}`
+                : `${resolvedInteraction.actionLabel} · ${resolvedInteraction.targetName}`
+            }
+            style={{
+              minHeight: `${actionBtnPx}px`,
+            }}
+            className="flex items-center gap-1.5 rounded-full border border-emerald-300/80 bg-emerald-500 px-3 text-xs font-bold text-slate-950 shadow-lg transition-transform active:scale-95"
+          >
+            {renderInteractionIcon(resolvedInteraction.kind)}
+            <span>{resolvedInteraction.actionLabel}</span>
+          </button>
+        )}
+
+        {/* Camera View Preset Button */}
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onToggleCamera}
+          aria-label="Toggle Camera View"
+          style={{
+            width: `${actionBtnPx}px`,
+            height: `${actionBtnPx}px`,
+          }}
+          className={`relative flex items-center justify-center rounded-full border shadow-lg transition-transform active:scale-90 ${
+            snapshot.cameraMode === 'title_orbit'
+              ? 'border-sky-400/60 bg-sky-500/25 text-sky-200'
+              : 'border-white/25 bg-slate-950/85 text-white hover:bg-slate-800'
+          }`}
+        >
+          <Camera className="h-4 w-4" strokeWidth={2} />
+          {snapshot.cameraMode === 'free_inspect' && snapshot.cameraPreset && (
+            <span className="pointer-events-none absolute -bottom-1 rounded bg-slate-900/95 px-1 font-mono-tabular text-[8px] font-bold uppercase tracking-tight text-amber-300">
+              {snapshot.cameraPreset === 'standard' ? 'STD' : snapshot.cameraPreset.toUpperCase()}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Primary Action Row: Jump & Hold-to-Sprint */}
+      <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          data-hud-control="true"
+          disabled={isAirborne}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (isAirborne || jumpPointerIdRef.current !== null) return;
+            jumpPointerIdRef.current = e.pointerId;
+            setJumpPressed(true);
+            try {
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            } catch {
+              // Ignore synthetic pointer capture errors
+            }
+            onJumpTap?.();
+          }}
+          onPointerUp={(e) => {
+            if (jumpPointerIdRef.current !== e.pointerId) return;
+            releaseJump();
+          }}
+          onPointerCancel={(e) => {
+            if (jumpPointerIdRef.current !== e.pointerId) return;
+            releaseJump();
+          }}
+          onLostPointerCapture={(e) => {
+            if (jumpPointerIdRef.current !== e.pointerId) return;
+            releaseJump();
+          }}
+          aria-label="Jump"
+          aria-pressed={jumpPressed}
+          style={{
+            width: `${actionBtnPx}px`,
+            height: `${actionBtnPx}px`,
+          }}
+          className={`flex touch-none select-none items-center justify-center rounded-full border shadow-lg transition-transform active:scale-90 ${
+            isAirborne
+              ? 'border-white/15 bg-slate-900/60 text-slate-500'
+              : jumpPressed
+                ? 'border-sky-300 bg-sky-400 text-slate-950 scale-95'
+                : 'border-white/25 bg-slate-950/85 text-slate-100 hover:bg-slate-800'
+          }`}
+        >
+          <ArrowUp className="h-5 w-5" strokeWidth={2.4} />
+        </button>
+
+        <button
+          type="button"
+          data-hud-control="true"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (sprintPointerIdRef.current !== null) return;
+            sprintPointerIdRef.current = e.pointerId;
+            try {
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            } catch {
+              // Ignore synthetic pointer capture errors
+            }
+            onSprintHold(true);
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            if (sprintPointerIdRef.current !== e.pointerId) return;
+            releaseSprint();
+          }}
+          onPointerCancel={(e) => {
+            if (sprintPointerIdRef.current !== e.pointerId) return;
+            releaseSprint();
+          }}
+          onLostPointerCapture={(e) => {
+            if (sprintPointerIdRef.current !== e.pointerId) return;
+            releaseSprint();
+          }}
+          aria-label="Sprint"
+          aria-pressed={snapshot.isSprinting}
+          style={{
+            width: `${primaryBtnPx}px`,
+            height: `${primaryBtnPx}px`,
+          }}
+          className={`flex touch-none select-none items-center justify-center rounded-full border shadow-lg transition-transform active:scale-90 ${
+            snapshot.isSprinting
+              ? 'border-amber-300 bg-amber-500 text-slate-950 scale-95'
+              : 'border-amber-400/60 bg-slate-950/85 text-amber-400'
+          }`}
+        >
+          <Zap className="h-5 w-5" strokeWidth={2.2} />
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4"
+      style={{
+        opacity: snapshot.settings.hudOpacity,
+        paddingTop: 'max(0.625rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(0.625rem, env(safe-area-inset-left))',
+        paddingRight: 'max(0.625rem, env(safe-area-inset-right))',
+      }}
+    >
+      {/* Dedicated Camera Touch Surface Cue (non-blocking semantic region; actual touches hit canvasHost cleanly) */}
+      <div
+        data-camera-touch-region="true"
+        aria-hidden="true"
+        className={`pointer-events-none fixed inset-y-0 ${
+          isLeftHanded ? 'left-0 right-[40%]' : 'left-[38%] right-0'
+        }`}
+      />
+
+      {/* Portrait Mode Recommendation Banner on Mobile Touch Viewports */}
+      {showPortraitNotice && (
+        <div
+          role="status"
+          className="pointer-events-auto fixed left-1/2 top-2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-amber-400/50 bg-slate-950/95 px-3 py-1.5 text-[11px] font-medium text-amber-200 shadow-lg"
+        >
+          <RotateCw className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <span className="whitespace-nowrap">Rotate to landscape for optimal mobile controls</span>
+        </div>
+      )}
+
       {/* TOP HUD PERIMETER */}
-      <div className="flex items-start justify-between gap-2">
-        {/* Top-Left: Interactive Circular Minimap + Crisp Home Marker + Home/Mission/Waypoint Chips */}
-        <div className="flex flex-col items-start gap-1.5">
+      <div className="relative z-10 flex items-start justify-between gap-2">
+        {/* Top-Left: Circular Minimap + Real Time, Weather, District Location & Home Marker */}
+        <div className="flex items-start gap-2.5">
           <button
             type="button"
             data-hud-control="true"
@@ -299,8 +671,8 @@ export function HudOverlay({
               onOpenWorldMap();
             }}
             aria-label="Open Minimap World View"
-            title="Tap to open Kozhikode Interactive World Map"
-            className="pointer-events-auto relative h-[88px] w-[88px] overflow-hidden rounded-full border-2 border-white/35 bg-slate-950/90 shadow-xl transition-transform hover:border-amber-400/75 active:scale-95 sm:h-24 sm:w-24"
+            title="Tap to open Kozhikode Interactive World Map (M)"
+            className="pointer-events-auto relative h-[78px] w-[78px] shrink-0 overflow-hidden rounded-full border-2 border-white/35 bg-slate-950/90 shadow-xl transition-transform hover:border-amber-400/75 active:scale-95 sm:h-24 sm:w-24"
           >
             <canvas ref={minimapRef} width={96} height={96} className="h-full w-full" />
 
@@ -312,7 +684,7 @@ export function HudOverlay({
               N
             </div>
 
-            {/* High-Contrast Protagonist Home Icon Marker (West Hill) */}
+            {/* Protagonist Home Map Marker */}
             <div
               aria-label="Arjun's Home Map Marker"
               title="West Hill · Arjun's Residence"
@@ -323,83 +695,74 @@ export function HudOverlay({
             </div>
           </button>
 
-          {/* Home Distance & Mission Status Chip (Visible on Mobile & Desktop) */}
-          <div className="pointer-events-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              data-hud-control="true"
-              onClick={() => {
-                onUiClick();
-                showTimedNotice(
-                  snapshot.nearHome
-                    ? "At Arjun's Residence · West Hill"
-                    : `Arjun's Home (West Hill) · ${snapshot.homeDistanceMeters}m`,
-                );
-              }}
-              aria-label="Home Location Status"
-              className={`flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold shadow-md transition-colors ${
-                snapshot.nearHome
-                  ? 'border-emerald-300/70 bg-emerald-500/25 text-emerald-100'
-                  : 'border-white/20 bg-slate-950/85 text-slate-100 hover:bg-slate-900'
-              }`}
-            >
-              <Home className="h-3.5 w-3.5 text-emerald-400" strokeWidth={2.2} />
-              <span className="font-mono-tabular">
-                {snapshot.nearHome ? 'Home' : `${snapshot.homeDistanceMeters}m`}
-              </span>
-            </button>
+          {/* Clean Top-Left Telemetry: Time, Weather, Location, Home Distance */}
+          <div className="flex flex-col items-start gap-1">
+            <div className="rounded-xl border border-white/15 bg-slate-950/85 px-2.5 py-1.5 shadow-lg">
+              <div className="flex items-center gap-2 font-mono-tabular text-xs font-semibold text-white">
+                <span>{snapshot.clockFormatted}</span>
+                <span className="text-slate-500">·</span>
+                <span className="flex items-center gap-1 text-[11px] font-medium text-amber-200">
+                  <CloudSun className="h-3.5 w-3.5 text-amber-400" />
+                  <span>{snapshot.weatherLabel ?? 'Golden Haze'}</span>
+                </span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-slate-300">
+                <MapPin className="h-3 w-3 shrink-0 text-amber-400" strokeWidth={2.3} />
+                <span className="max-w-[140px] truncate sm:max-w-[220px]">
+                  {snapshot.districtName}
+                </span>
+              </div>
+            </div>
 
-            <button
-              type="button"
-              data-hud-control="true"
-              onClick={() => {
-                onUiClick();
-                showTimedNotice('Free Roam · Story Missions begin in Phase 15');
-              }}
-              aria-label="Mission Status"
-              className="flex min-h-[34px] items-center gap-1 rounded-lg border border-white/20 bg-slate-950/85 px-2 py-1 text-[11px] font-semibold text-amber-300 shadow-md hover:bg-slate-900"
-            >
-              <Flag className="h-3.5 w-3.5" strokeWidth={2.2} />
-              <span className="hidden sm:inline">Explore</span>
-            </button>
-          </div>
-
-          {snapshot.activeDestination && (
-            <div className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-slate-950/90 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 shadow-lg">
-              <Navigation className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-              <span className="max-w-[140px] truncate">{snapshot.activeDestination.name}</span>
-              <span className="font-mono-tabular text-amber-300">
-                {snapshot.activeDestination.realDistanceKm} km
-              </span>
+            <div className="pointer-events-auto flex items-center gap-1.5">
               <button
                 type="button"
                 data-hud-control="true"
-                onClick={onClearDestination}
-                aria-label="Clear Active Waypoint"
-                className="ml-0.5 rounded p-0.5 text-slate-400 hover:text-white"
+                onClick={() => {
+                  onUiClick();
+                  showTimedNotice(
+                    snapshot.nearHome
+                      ? "At Arjun's Residence · West Hill"
+                      : `Arjun's Home (West Hill) · ${snapshot.homeDistanceMeters}m`,
+                  );
+                }}
+                aria-label="Home Location Status"
+                className={`flex min-h-[30px] items-center gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] font-semibold shadow-md transition-colors ${
+                  snapshot.nearHome
+                    ? 'border-emerald-300/70 bg-emerald-500/25 text-emerald-100'
+                    : 'border-white/20 bg-slate-950/85 text-slate-100 hover:bg-slate-900'
+                }`}
               >
-                <X className="h-3 w-3" />
+                <Home className="h-3 w-3 text-emerald-400" strokeWidth={2.2} />
+                <span className="font-mono-tabular">
+                  {snapshot.nearHome ? 'Home' : `${snapshot.homeDistanceMeters}m`}
+                </span>
               </button>
-            </div>
-          )}
-        </div>
 
-        {/* Top-Right: District/Clock/Cash, World Map, Weapon/Inventory, Camera, Pause */}
-        <div className="pointer-events-auto flex items-start gap-2">
-          {/* District + Clock + Cash (Always visible on mobile & desktop) */}
-          <div className="rounded-xl border border-white/15 bg-slate-950/85 px-2.5 py-1.5 text-right shadow-lg sm:px-3.5 sm:py-2">
-            <div className="flex items-center justify-end gap-1 font-mono-tabular text-[11px] font-semibold text-white sm:text-sm">
-              <MapPin className="h-3 w-3 shrink-0 text-amber-400" strokeWidth={2.3} />
-              <span className="max-w-[96px] truncate sm:max-w-none">
-                {snapshot.clockFormatted} · {snapshot.districtName}
-              </span>
-            </div>
-            <div className="font-mono-tabular text-[11px] font-bold text-emerald-400 sm:text-xs">
-              ₹ 0
+              {snapshot.activeDestination && (
+                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-slate-950/90 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 shadow-lg">
+                  <Navigation className="h-3 w-3 shrink-0 text-emerald-400" />
+                  <span className="max-w-[110px] truncate">{snapshot.activeDestination.name}</span>
+                  <span className="font-mono-tabular text-amber-300">
+                    {snapshot.activeDestination.realDistanceKm} km
+                  </span>
+                  <button
+                    type="button"
+                    data-hud-control="true"
+                    onClick={onClearDestination}
+                    aria-label="Clear Active Waypoint"
+                    className="ml-0.5 rounded p-0.5 text-slate-400 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+        </div>
 
-          {/* Interactive World Map Button */}
+        {/* Top-Right: Map, Optional Settings Access & Pause */}
+        <div className="pointer-events-auto flex items-start gap-2">
           <button
             type="button"
             data-hud-control="true"
@@ -408,50 +771,34 @@ export function HudOverlay({
               onOpenWorldMap();
             }}
             aria-label="World Map"
-            title="Open Kozhikode District Map & Google Maps Explorer"
+            title="Open Kozhikode Interactive Map (M)"
             className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-400/60 bg-slate-950/88 text-amber-300 shadow-lg transition-colors hover:bg-amber-500 hover:text-slate-950 active:scale-95"
           >
             <MapIcon className="h-5 w-5" strokeWidth={2.1} />
           </button>
 
-          {/* Weapon & Inventory Slot (Phase 9 Foundation - Clearly Distinguished as Unarmed/Locked) */}
-          <button
-            type="button"
-            data-hud-control="true"
-            onClick={() => {
-              onUiClick();
-              showTimedNotice('Unarmed · Weapons & Inventory unlock in Phase 9');
-            }}
-            aria-label="Weapon and Inventory Slot"
-            className="relative flex h-11 w-11 items-center justify-center rounded-xl border border-white/25 bg-slate-950/85 text-slate-100 shadow-lg transition-colors hover:bg-slate-800 active:scale-95"
-          >
-            <Crosshair className="h-5 w-5 text-amber-300" strokeWidth={2} />
-            <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-slate-900 bg-slate-700 text-slate-200">
-              <Briefcase className="h-2.5 w-2.5" strokeWidth={2.3} />
-            </span>
-          </button>
+          {onOpenSettings && (
+            <button
+              type="button"
+              data-hud-control="true"
+              onClick={() => {
+                onUiClick();
+                onOpenSettings();
+              }}
+              aria-label="Settings and Controls"
+              title="Open Controls & Settings"
+              className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-slate-950/85 text-slate-100 shadow-lg transition-colors hover:bg-slate-800 active:scale-95"
+            >
+              <Settings className="h-5 w-5" strokeWidth={2} />
+            </button>
+          )}
 
-          {/* Camera Toggle Button */}
-          <button
-            type="button"
-            data-hud-control="true"
-            onClick={onToggleCamera}
-            aria-label="Toggle Camera View"
-            className={`flex h-11 w-11 items-center justify-center rounded-xl border shadow-lg transition-colors active:scale-95 ${
-              snapshot.cameraMode === 'title_orbit'
-                ? 'border-sky-400/60 bg-sky-500/25 text-sky-200'
-                : 'border-white/25 bg-slate-950/85 text-white hover:bg-slate-800'
-            }`}
-          >
-            <Camera className="h-5 w-5" strokeWidth={2} />
-          </button>
-
-          {/* Pause / Settings Button */}
           <button
             type="button"
             data-hud-control="true"
             onClick={onPause}
             aria-label="Pause and Settings"
+            title="Pause Game (Esc)"
             className="flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-slate-950/85 text-white shadow-lg transition-colors hover:bg-slate-800 active:scale-95"
           >
             <Pause className="h-5 w-5" strokeWidth={2.2} />
@@ -459,59 +806,39 @@ export function HudOverlay({
         </div>
       </div>
 
-      {/* Transient Contextual Notice Toast */}
-      {hudNotice && (
-        <div className="pointer-events-none self-center rounded-xl border border-amber-400/40 bg-slate-950/90 px-3.5 py-2 text-center text-xs font-medium text-amber-100 shadow-xl">
-          {hudNotice}
-        </div>
-      )}
-
-      {/* BOTTOM CONTROLS + DEDICATED BOTTOM SOUND CONTROL */}
-      <div className="relative flex items-end justify-between gap-2">
-        {/* Bottom-Left: Virtual Analog Joystick (Player Movement Only) */}
-        <div
-          ref={joystickBaseRef}
-          data-hud-control="true"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            if (joystickPointerIdRef.current !== null) return;
-            joystickPointerIdRef.current = e.pointerId;
-            try {
-              e.currentTarget.setPointerCapture?.(e.pointerId);
-            } catch {
-              // Ignore synthetic pointer capture errors
-            }
-            updateJoystick(e.clientX, e.clientY);
-          }}
-          onPointerMove={(e) => {
-            if (joystickPointerIdRef.current !== e.pointerId) return;
-            updateJoystick(e.clientX, e.clientY);
-          }}
-          onPointerUp={(e) => {
-            if (joystickPointerIdRef.current !== e.pointerId) return;
-            resetJoystick();
-          }}
-          onPointerCancel={(e) => {
-            if (joystickPointerIdRef.current !== e.pointerId) return;
-            resetJoystick();
-          }}
-          onLostPointerCapture={(e) => {
-            if (joystickPointerIdRef.current !== e.pointerId) return;
-            resetJoystick();
-          }}
-          role="slider"
-          aria-label="Movement Joystick"
-          aria-valuenow={Math.round(Math.hypot(knobOffset.x, knobOffset.y))}
-          className="pointer-events-auto relative flex h-24 w-24 shrink-0 touch-none select-none items-center justify-center rounded-full border border-white/25 bg-slate-950/55 shadow-lg sm:h-28 sm:w-28"
-        >
-          <div className="pointer-events-none absolute inset-3 rounded-full border border-white/15" />
+      {/* CENTER CONTEXTUAL INTERACTION TARGET & SUBTLE NOTICE */}
+      <div className="pointer-events-none relative z-10 flex flex-col items-center gap-1.5 self-center">
+        {hudNotice && (
+          <div className="rounded-xl border border-amber-400/40 bg-slate-950/90 px-3.5 py-2 text-center text-xs font-medium text-amber-100 shadow-xl">
+            {hudNotice}
+          </div>
+        )}
+        {resolvedInteraction && (
           <div
-            className="pointer-events-none h-10 w-10 rounded-full border border-white/45 bg-white/30 shadow-md sm:h-11 sm:w-11"
-            style={{
-              transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
-            }}
-          />
-        </div>
+            aria-label="Nearby Building Marker"
+            className="flex items-center gap-2 rounded-xl border border-white/20 bg-slate-950/88 px-3 py-1.5 text-xs text-slate-100 shadow-lg"
+          >
+            <span className="max-w-[200px] truncate font-semibold text-white">
+              {resolvedInteraction.targetName}
+            </span>
+            {resolvedInteraction.malayalamName && (
+              <span className="hidden text-slate-300 sm:inline">
+                · {resolvedInteraction.malayalamName}
+              </span>
+            )}
+            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono-tabular text-[10px] font-semibold text-amber-300">
+              {resolvedInteraction.actionLabel}
+              {resolvedInteraction.distanceMeters > 0
+                ? ` · ${resolvedInteraction.distanceMeters}m`
+                : ''}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* BOTTOM CONTROLS: LEFT JOYSTICK (OR FLIPPED), AUDIO MIXER, RIGHT ACTION CLUSTER */}
+      <div className="relative z-10 flex items-end justify-between gap-2">
+        {isLeftHanded ? actionThumbCluster : joystickCluster}
 
         {/* Bottom-Center: Dedicated Sound Control & Compact Audio Mixer Popover */}
         <div className="pointer-events-none flex flex-col items-center gap-2 pb-0.5">
@@ -537,7 +864,7 @@ export function HudOverlay({
             }}
             aria-label="Sound and Audio Settings"
             aria-expanded={showAudioDrawer}
-            className={`pointer-events-auto flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 shadow-lg transition-colors active:scale-95 ${
+            className={`pointer-events-auto flex min-h-[40px] items-center gap-1.5 rounded-full border px-3 shadow-lg transition-colors active:scale-95 ${
               snapshot.settings.masterMuted
                 ? 'border-rose-400/50 bg-slate-950/90 text-rose-300'
                 : showAudioDrawer
@@ -556,89 +883,7 @@ export function HudOverlay({
           </button>
         </div>
 
-        {/* Bottom-Right: Compact Action Thumb Cluster (Home Door Interaction, Vehicle Foundation, Sprint) */}
-        <div className="pointer-events-auto flex shrink-0 flex-col items-end gap-2 pb-0.5 pr-0.5">
-          <div className="flex items-center gap-2">
-            {/* Home / Door Interaction Icon */}
-            <button
-              type="button"
-              data-hud-control="true"
-              onClick={() => {
-                if (snapshot.nearHome) {
-                  onHomeInteract();
-                  showTimedNotice("Arjun's Residence Door · Full Interior opens in Story Phase");
-                } else {
-                  onUiClick();
-                  showTimedNotice(`Walk to Arjun's Home (${snapshot.homeDistanceMeters}m) to interact`);
-                }
-              }}
-              aria-label="Interact with Home Entrance"
-              className={`relative flex h-11 w-11 items-center justify-center rounded-full border shadow-lg transition-colors active:scale-95 ${
-                snapshot.nearHome
-                  ? 'border-emerald-300 bg-emerald-500 text-slate-950'
-                  : 'border-white/20 bg-slate-950/75 text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              <DoorOpen className="h-5 w-5" strokeWidth={2.2} />
-            </button>
-
-            {/* Vehicle Interaction Slot (Phase 7 Visual Foundation) */}
-            <button
-              type="button"
-              data-hud-control="true"
-              onClick={() => {
-                onUiClick();
-                showTimedNotice('Vehicles unlock in Phase 7 (Driving & Physics)');
-              }}
-              aria-label="Vehicle Entry (Locked until Phase 7)"
-              className="relative flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-slate-950/75 text-slate-300 shadow-lg hover:bg-slate-800 active:scale-95"
-            >
-              <Car className="h-5 w-5" strokeWidth={2} />
-              <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-slate-900 bg-slate-700 text-amber-300">
-                <Lock className="h-2.5 w-2.5" strokeWidth={2.4} />
-              </span>
-            </button>
-          </div>
-
-          {/* Primary Hold-to-Sprint Button */}
-          <button
-            type="button"
-            data-hud-control="true"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              if (sprintPointerIdRef.current !== null) return;
-              sprintPointerIdRef.current = e.pointerId;
-              try {
-                e.currentTarget.setPointerCapture?.(e.pointerId);
-              } catch {
-                // Ignore synthetic pointer capture errors
-              }
-              onSprintHold(true);
-            }}
-            onPointerUp={(e) => {
-              e.stopPropagation();
-              if (sprintPointerIdRef.current !== e.pointerId) return;
-              releaseSprint();
-            }}
-            onPointerCancel={(e) => {
-              if (sprintPointerIdRef.current !== e.pointerId) return;
-              releaseSprint();
-            }}
-            onLostPointerCapture={(e) => {
-              if (sprintPointerIdRef.current !== e.pointerId) return;
-              releaseSprint();
-            }}
-            aria-label="Sprint"
-            aria-pressed={snapshot.isSprinting}
-            className={`flex h-12 w-12 touch-none select-none items-center justify-center rounded-full border shadow-lg transition-transform active:scale-90 ${
-              snapshot.isSprinting
-                ? 'border-amber-300 bg-amber-500 text-slate-950'
-                : 'border-amber-400/60 bg-slate-950/85 text-amber-400'
-            }`}
-          >
-            <Zap className="h-5 w-5" strokeWidth={2.2} />
-          </button>
-        </div>
+        {isLeftHanded ? joystickCluster : actionThumbCluster}
       </div>
     </div>
   );

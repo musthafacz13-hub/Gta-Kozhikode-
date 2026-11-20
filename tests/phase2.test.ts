@@ -593,19 +593,18 @@ test('Frontend HUD, TitleScreen, and BottomAudioPanel render all required icons 
   for (const requiredAria of [
     "Arjun&#x27;s Home Map Marker",
     'Home Location Status',
-    'Mission Status',
-    'Weapon and Inventory Slot',
+    'World Map',
     'Toggle Camera View',
     'Pause and Settings',
     'Movement Joystick',
     'Sound and Audio Settings',
     'Interact with Home Entrance',
-    'Vehicle Entry (Locked until Phase 7)',
+    'Jump',
     'Sprint',
   ]) {
     assert.ok(hudHtml.includes(requiredAria), `Missing HUD control in markup: ${requiredAria}`);
   }
-  assert.ok((hudHtml.match(/<svg/g) ?? []).length >= 10, 'HUD must render crisp SVG icons');
+  assert.ok((hudHtml.match(/<svg/g) ?? []).length >= 9, 'HUD must render crisp SVG icons');
 
   const audioPanelHtml = renderToStaticMarkup(
     React.createElement(BottomAudioPanel, {

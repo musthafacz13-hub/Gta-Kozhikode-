@@ -58,6 +58,7 @@ const INITIAL_SNAPSHOT: EngineHudSnapshot = {
   gazetteerCount: KOZHIKODE_GAZETTEER_PLACES.length,
   nearHome: false,
   homeDistanceMeters: 141,
+  nearbyBuilding: null,
   activeDestination: null,
   audio: {
     unlocked: false,
@@ -99,7 +100,8 @@ function GameShell() {
   const engineRef = useRef<GameEngine | null>(null);
 
   const [snapshot, setSnapshot] = useState<EngineHudSnapshot>(INITIAL_SNAPSHOT);
-  const [modalInitialTab, setModalInitialTab] = useState<'pause' | 'settings'>('pause');
+  const [modalInitialTab, setModalInitialTab] = useState<'pause' | 'settings' | 'controls'>('pause');
+  const requestedModalTabRef = useRef<'pause' | 'settings' | 'controls' | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showWorldMap, setShowWorldMap] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -112,10 +114,15 @@ function GameShell() {
 
     const engine = new GameEngine();
     engineRef.current = engine;
+    engine.setMapToggleHandler(() => {
+      setShowWorldMap((prev) => !prev);
+    });
     const unsubscribe = engine.subscribeHud((next) => {
       setSnapshot(next);
       if (next.mode === 'paused') {
-        setModalInitialTab('pause');
+        const nextTab = requestedModalTabRef.current ?? 'pause';
+        requestedModalTabRef.current = null;
+        setModalInitialTab(nextTab);
         setShowModal(true);
       } else if (next.mode === 'playing') {
         setShowModal(false);
@@ -132,6 +139,7 @@ function GameShell() {
     resizeObserver.observe(host);
 
     return () => {
+      engine.setMapToggleHandler(null);
       resizeObserver.disconnect();
       unsubscribe();
       engine.dispose();
@@ -140,15 +148,35 @@ function GameShell() {
   }, []);
 
   useEffect(() => {
+    engineRef.current?.setExternalModalOpen(showWorldMap);
+  }, [showWorldMap]);
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.code === 'Enter' || e.code === 'Space') && snapshot.mode === 'title' && !showModal) {
         e.preventDefault();
         engineRef.current?.startPlay();
+        return;
+      }
+      if (e.code === 'KeyM' && (snapshot.mode === 'playing' || snapshot.mode === 'paused')) {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        e.preventDefault();
+        setShowWorldMap((prev) => !prev);
+        return;
+      }
+      if (e.code === 'Escape') {
+        if (showWorldMap) {
+          e.preventDefault();
+          setShowWorldMap(false);
+        } else if (snapshot.mode === 'paused') {
+          e.preventDefault();
+          engineRef.current?.togglePause();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [snapshot.mode, showModal]);
+  }, [snapshot.mode, showModal, showWorldMap]);
 
   const handleManualSave = async () => {
     const saved = await engineRef.current?.saveCheckpoint('slot_manual_1');
@@ -192,18 +220,35 @@ function GameShell() {
       {(snapshot.mode === 'playing' || snapshot.mode === 'paused') && !showWorldMap && (
         <HudOverlay
           snapshot={snapshot}
-          onPause={() => engineRef.current?.togglePause()}
+          onPause={() => {
+            requestedModalTabRef.current = 'pause';
+            engineRef.current?.togglePause();
+          }}
+          onOpenSettings={() => {
+            requestedModalTabRef.current = 'controls';
+            if (snapshot.mode === 'playing') {
+              engineRef.current?.togglePause();
+            } else {
+              setModalInitialTab('controls');
+              setShowModal(true);
+            }
+          }}
           onToggleCamera={() => engineRef.current?.toggleCameraMode()}
           onToggleMute={() => engineRef.current?.toggleMute()}
           onUpdateSettings={(patch: Partial<GameSettings>) => {
             void engineRef.current?.updateSettings(patch);
           }}
           onHomeInteract={() => engineRef.current?.playHomeDoorPreview()}
+          onBuildingInteract={() => engineRef.current?.interactWithNearbyBuilding()}
           onOpenWorldMap={() => setShowWorldMap(true)}
           onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
           onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
           onVirtualMove={(x, y) => engineRef.current?.input.setVirtualAxes(x, y)}
           onSprintHold={(held) => engineRef.current?.input.triggerAction('sprint', held)}
+          onJumpTap={() => {
+            engineRef.current?.input.triggerAction('jump', true);
+            engineRef.current?.input.triggerAction('jump', false);
+          }}
         />
       )}
 
@@ -211,14 +256,17 @@ function GameShell() {
         <WorldMapModal
           snapshot={snapshot}
           onClose={() => setShowWorldMap(false)}
-          onTravelToWorld={(x, z, heading) => engineRef.current?.travelToWorldPoint(x, z, heading)}
+          onTravelToWorld={(x, z, heading) => {
+            setShowWorldMap(false);
+            engineRef.current?.travelToWorldPoint(x, z, heading);
+          }}
           onSetDestination={(dest) => engineRef.current?.setDestinationWaypoint(dest)}
           onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
           onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
         />
       )}
 
-      {showModal && (
+      {showModal && !showWorldMap && (
         <PauseDiagnosticsModal
           snapshot={snapshot}
           logs={engineRef.current?.getLogs() ?? []}
@@ -237,6 +285,9 @@ function GameShell() {
             } else {
               engineRef.current?.startPlay();
             }
+          }}
+          onOpenMap={() => {
+            setShowWorldMap(true);
           }}
           onReturnTitle={() => {
             setShowModal(false);

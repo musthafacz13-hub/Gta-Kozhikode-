@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
+  Gamepad2,
   Home,
+  Map as MapIcon,
   MapPin,
   Music,
   Play,
@@ -24,13 +26,15 @@ import type {
   LogEntry,
   TimeOfDayPreset,
 } from '../engine/types.ts';
+import { ControlsSettingsPanel } from './ControlsSettingsPanel.tsx';
 
 interface PauseDiagnosticsModalProps {
   snapshot: EngineHudSnapshot;
   logs: LogEntry[];
-  initialTab?: 'pause' | 'settings';
+  initialTab?: 'pause' | 'settings' | 'controls';
   onClose: () => void;
   onResumePlay: () => void;
+  onOpenMap?: () => void;
   onReturnTitle: () => void;
   onTravelHome: () => void;
   onTravelMananchira: () => void;
@@ -43,7 +47,7 @@ interface PauseDiagnosticsModalProps {
   onTriggerContextLoss: () => void;
 }
 
-type MenuView = 'pause' | 'saves' | 'settings' | 'diagnostics';
+type MenuView = 'pause' | 'saves' | 'settings' | 'controls' | 'diagnostics';
 
 export function PauseDiagnosticsModal({
   snapshot,
@@ -51,6 +55,7 @@ export function PauseDiagnosticsModal({
   initialTab = 'pause',
   onClose,
   onResumePlay,
+  onOpenMap,
   onReturnTitle,
   onTravelHome,
   onTravelMananchira,
@@ -73,6 +78,7 @@ export function PauseDiagnosticsModal({
             {view === 'pause' && 'PAUSED'}
             {view === 'saves' && 'SAVE SLOTS'}
             {view === 'settings' && 'SETTINGS & AUDIO'}
+            {view === 'controls' && 'CONTROLS & CAMERA'}
             {view === 'diagnostics' && 'SYSTEM DIAGNOSTICS'}
           </h2>
           <button
@@ -87,21 +93,50 @@ export function PauseDiagnosticsModal({
 
         <div className="flex-1 overflow-y-auto p-5">
           {view === 'pause' && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2.5">
               <button
                 type="button"
                 onClick={onResumePlay}
                 className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-amber-500 text-sm font-bold text-slate-950 hover:bg-amber-400"
               >
                 <Play className="h-4 w-4 fill-current" />
-                <span>Resume Game</span>
+                <span>Resume</span>
               </button>
+
+              <div className="grid grid-cols-3 gap-2">
+                {onOpenMap && (
+                  <button
+                    type="button"
+                    onClick={onOpenMap}
+                    className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-xl border border-amber-400/45 bg-amber-500/15 px-3 text-xs font-semibold text-amber-200 hover:bg-amber-500/25"
+                  >
+                    <MapIcon className="h-4 w-4 text-amber-300" />
+                    <span>Map</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setView('settings')}
+                  className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  <Settings className="h-4 w-4 text-amber-400" />
+                  <span>Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('controls')}
+                  className="flex min-h-[46px] items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  <Gamepad2 className="h-4 w-4 text-sky-400" />
+                  <span>Controls</span>
+                </button>
+              </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
                   onClick={onTravelHome}
-                  className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25"
                 >
                   <Home className="h-4 w-4 text-emerald-400" />
                   <span>Go to West Hill Home</span>
@@ -109,7 +144,7 @@ export function PauseDiagnosticsModal({
                 <button
                   type="button"
                   onClick={onTravelMananchira}
-                  className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-800 px-3 text-xs font-semibold text-slate-100 hover:bg-slate-700"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-800 px-3 text-xs font-semibold text-slate-100 hover:bg-slate-700"
                 >
                   <MapPin className="h-4 w-4 text-amber-400" />
                   <span>Go to Mananchira</span>
@@ -122,7 +157,7 @@ export function PauseDiagnosticsModal({
                   onSaveManual();
                   setView('saves');
                 }}
-                className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800 text-sm font-medium text-white hover:bg-slate-700"
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800 text-sm font-medium text-white hover:bg-slate-700"
               >
                 <Save className="h-4 w-4 text-teal-400" />
                 <span>Save / Manage Slots</span>
@@ -130,19 +165,10 @@ export function PauseDiagnosticsModal({
 
               <button
                 type="button"
-                onClick={() => setView('settings')}
-                className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800 text-sm font-medium text-white hover:bg-slate-700"
-              >
-                <Settings className="h-4 w-4 text-amber-400" />
-                <span>Graphics, Audio &amp; Controls</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={onReturnTitle}
-                className="flex min-h-[46px] items-center justify-center rounded-xl border border-white/10 bg-slate-950 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                className="flex min-h-[44px] items-center justify-center rounded-xl border border-white/10 bg-slate-950 text-sm font-medium text-slate-300 hover:bg-slate-800"
               >
-                Quit to Main Menu
+                Return to Title
               </button>
             </div>
           )}
@@ -407,6 +433,13 @@ export function PauseDiagnosticsModal({
                 <span>Reset Defaults</span>
               </button>
             </div>
+          )}
+
+          {view === 'controls' && (
+            <ControlsSettingsPanel
+              settings={snapshot.settings}
+              onUpdateSettings={onUpdateSettings}
+            />
           )}
 
           {view === 'diagnostics' && (

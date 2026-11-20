@@ -1,29 +1,47 @@
 import * as THREE from 'three';
 import { resolveGraphicsPresetProfile, type GraphicsPresetProfile } from '../assets/AssetRegistry.ts';
 import type { AssetManager } from '../assets/AssetManager.ts';
-import type { PlayerMoveResult, StaticAabbCollider } from '../player/PlayerController.ts';
+import type { TeaShopSfxEvent } from '../audio/AudioTypes.ts';
+import {
+  ArjunAnimator,
+  type ArjunAnimatorSnapshot,
+} from '../player/ArjunAnimator.ts';
+import {
+  createArjunCharacterRig,
+  type ArjunAppearanceConfig,
+  type ArjunCharacterRig,
+} from '../player/ArjunCharacterModel.ts';
+import type {
+  PlayerDynamicObstacles,
+  PlayerMoveResult,
+  StaticAabbCollider,
+} from '../player/PlayerController.ts';
 import { AtmosphereSystem } from '../rendering/AtmosphereSystem.ts';
 import { MaterialLibrary } from '../rendering/MaterialLibrary.ts';
 import type { GraphicsTier, TimeOfDayPreset } from '../types.ts';
+import type { RegisteredBuildingRecord } from '../world/BuildingSystem.ts';
 import { getGroundHeightAt } from '../world/KozhikodeGeography.ts';
-import {
-  createPlayerRig,
-  createProvisionalHumanFigure,
-  type ProvisionalPlayerRig,
-} from '../world/ProvisionalVehiclesAndFigures.ts';
+import { PedestrianSystem } from '../world/PedestrianSystem.ts';
+import { TrafficSystem, type TrafficHornEvent } from '../world/TrafficSystem.ts';
 import { WorldStreamer } from '../world/WorldStreamer.ts';
+
+export interface SceneUpdateCallbacks {
+  onVehicleHorn?: (event: TrafficHornEvent) => void;
+  onTeaShopSfx?: (event: TeaShopSfxEvent, distMeters: number) => void;
+}
 
 export class SceneManager {
   readonly scene: THREE.Scene;
   readonly materials: MaterialLibrary;
   readonly atmosphere: AtmosphereSystem;
   readonly worldStreamer: WorldStreamer;
+  readonly trafficSystem: TrafficSystem;
+  readonly pedestrianSystem: PedestrianSystem;
 
-  private readonly playerRig: ProvisionalPlayerRig;
-  private readonly citizenGroup = new THREE.Group();
+  private readonly arjunRig: ArjunCharacterRig;
+  private readonly arjunAnimator: ArjunAnimator;
   private debugGrid: THREE.GridHelper | null = null;
   private activePreset: GraphicsPresetProfile;
-  private walkCyclePhase = 0;
 
   constructor(
     assetManager: AssetManager,
@@ -43,24 +61,17 @@ export class SceneManager {
     // Stream initial chunks around Mananchira square
     this.worldStreamer.update(0, 22.5, 2.5);
 
-    this.playerRig = createPlayerRig(0x0f766e, 0x1e293b);
-    this.playerRig.group.position.set(22.5, 0.18, 2.5);
-    this.playerRig.group.rotation.y = -Math.PI * 0.35;
-    this.scene.add(this.playerRig.group);
+    this.trafficSystem = new TrafficSystem(this.materials, this.activePreset);
+    this.scene.add(this.trafficSystem.root);
 
-    const citizens: [number, number, number, number, number, number][] = [
-      [26.8, 0.18, -11.5, -Math.PI / 2, 0xf59e0b, 0x334155],
-      [27.2, 0.18, -12.6, -Math.PI / 2, 0xe11d48, 0xf8fafc],
-      [-22.5, 0.18, -4.0, Math.PI * 0.5, 0x2563eb, 0x1f2937],
-      [43.2, 0.18, -19.5, -Math.PI * 0.5, 0xd97706, 0x111827],
-    ];
-    for (const [cx, cy, cz, rot, shirt, pants] of citizens) {
-      const fig = createProvisionalHumanFigure(shirt, pants);
-      fig.position.set(cx, cy, cz);
-      fig.rotation.y = rot;
-      this.citizenGroup.add(fig);
-    }
-    this.scene.add(this.citizenGroup);
+    this.pedestrianSystem = new PedestrianSystem(this.activePreset);
+    this.scene.add(this.pedestrianSystem.root);
+
+    this.arjunRig = createArjunCharacterRig();
+    this.arjunRig.lod.position.set(22.5, 0.18, 2.5);
+    this.arjunRig.lod.rotation.y = 0;
+    this.scene.add(this.arjunRig.lod);
+    this.arjunAnimator = new ArjunAnimator();
 
     this.debugGrid = new THREE.GridHelper(320, 64, 0xf59e0b, 0x475569);
     this.debugGrid.position.y = 0.06;
@@ -80,6 +91,33 @@ export class SceneManager {
     return this.worldStreamer.getActiveChunkCount();
   }
 
+  getActiveBuildings(): RegisteredBuildingRecord[] {
+    return this.worldStreamer.getActiveBuildings();
+  }
+
+  getNearestTeaShopDistance(x: number, z: number): number {
+    return this.worldStreamer.getNearestTeaShopDistance(x, z);
+  }
+
+  getAmbientStats(
+    x: number,
+    z: number,
+  ): { activeVehicles: number; activePedestrians: number; nearTeaShop: boolean } {
+    return {
+      activeVehicles: this.trafficSystem.getActiveVehicleCount(),
+      activePedestrians: this.pedestrianSystem.getActivePedestrianCount(),
+      nearTeaShop: this.worldStreamer.getNearestTeaShopDistance(x, z) <= 28,
+    };
+  }
+
+  findNearestInteractableBuilding(
+    x: number,
+    z: number,
+    maxDistanceMeters = 8.5,
+  ): { building: RegisteredBuildingRecord; distanceMeters: number } | null {
+    return this.worldStreamer.findNearestInteractableBuilding(x, z, maxDistanceMeters);
+  }
+
   getRecommendedExposure(): number {
     return this.atmosphere.getState().exposure;
   }
@@ -92,30 +130,82 @@ export class SceneManager {
     return this.atmosphere.getClockFormatted();
   }
 
-  setTimeOfDayPreset(preset: TimeOfDayPreset): void {
-    this.atmosphere.setTimeOfDayPreset(preset);
-    this.atmosphere.update(0, this.scene, this.playerRig.group.position.x, this.playerRig.group.position.z, this.activePreset);
+  getWeatherLabel(): string {
+    return this.atmosphere.getWeatherLabel();
   }
 
-  syncPlayerVisual(state: PlayerMoveResult, dt: number): void {
-    this.playerRig.group.position.set(state.x, state.y, state.z);
-    this.playerRig.group.rotation.y = state.heading;
+  getNearbyPedestrianForTalk(
+    x: number,
+    z: number,
+    maxDistanceMeters = 2.6,
+  ): { id: string; label: string; distanceMeters: number } | null {
+    const peds = this.pedestrianSystem.getPedestrians();
+    let bestDist = maxDistanceMeters;
+    let bestId: string | null = null;
+    let bestVariant = '';
+    for (let i = 0; i < peds.length; i++) {
+      const ped = peds[i];
+      const d = Math.hypot(x - ped.x, z - ped.z);
+      if (d <= bestDist) {
+        bestDist = d;
+        bestId = ped.id;
+        bestVariant = ped.variant;
+      }
+    }
+    if (!bestId) return null;
+    const labels: Record<string, string> = {
+      man: 'Kozhikode Local',
+      elderly: 'Mooppan / Elder',
+      student: 'College Student',
+      woman: 'Local Pedestrian',
+      worker: 'Harbour Worker',
+      shopkeeper: 'Shopkeeper',
+      vendor: 'Street Vendor',
+    };
+    return {
+      id: bestId,
+      label: labels[bestVariant] ?? 'Local Resident',
+      distanceMeters: Number(bestDist.toFixed(1)),
+    };
+  }
 
-    if (state.isMoving) {
-      const rate = state.isSprinting ? 14 : 9;
-      this.walkCyclePhase += dt * rate;
-      const swing = Math.sin(this.walkCyclePhase) * (state.isSprinting ? 0.55 : 0.36);
-      this.playerRig.legL.rotation.x = swing;
-      this.playerRig.legR.rotation.x = -swing;
-      this.playerRig.armL.rotation.x = -swing * 0.75;
-      this.playerRig.armR.rotation.x = swing * 0.75;
-    } else {
-      this.walkCyclePhase = 0;
-      const damp = 1 - Math.exp(-14 * dt);
-      this.playerRig.legL.rotation.x *= 1 - damp;
-      this.playerRig.legR.rotation.x *= 1 - damp;
-      this.playerRig.armL.rotation.x *= 1 - damp;
-      this.playerRig.armR.rotation.x *= 1 - damp;
+  setTimeOfDayPreset(preset: TimeOfDayPreset): void {
+    this.atmosphere.setTimeOfDayPreset(preset);
+    this.atmosphere.update(
+      0,
+      this.scene,
+      this.arjunRig.lod.position.x,
+      this.arjunRig.lod.position.z,
+      this.activePreset,
+    );
+  }
+
+  getDynamicObstacles(): PlayerDynamicObstacles {
+    return {
+      vehicles: this.trafficSystem.getTrafficSnapshots(),
+      pedestrians: this.pedestrianSystem.getPedestrians(),
+    };
+  }
+
+  applyArjunAppearance(patch: Partial<ArjunAppearanceConfig>): ArjunAppearanceConfig {
+    this.arjunRig.applyAppearance(patch);
+    return this.arjunRig.getAppearance();
+  }
+
+  getArjunAppearance(): ArjunAppearanceConfig {
+    return this.arjunRig.getAppearance();
+  }
+
+  getArjunAnimationSnapshot(): ArjunAnimatorSnapshot {
+    return this.arjunAnimator.getSnapshot();
+  }
+
+  syncPlayerVisual(state: PlayerMoveResult, dt: number, camera?: THREE.Camera): void {
+    this.arjunRig.lod.position.set(state.x, state.visualY, state.z);
+    this.arjunRig.lod.rotation.y = state.heading;
+    this.arjunAnimator.update(this.arjunRig, state, dt);
+    if (camera) {
+      this.arjunRig.lod.update(camera);
     }
   }
 
@@ -137,22 +227,64 @@ export class SceneManager {
     this.activePreset = resolveGraphicsPresetProfile(tier);
     this.atmosphere.applyGraphicsPreset(this.activePreset, isSoftwareGl);
     this.worldStreamer.setGraphicsPreset(this.activePreset);
+    this.trafficSystem.setGraphicsPreset(this.activePreset);
+    this.pedestrianSystem.setGraphicsPreset(this.activePreset);
   }
 
   /**
-   * Advances atmosphere, coastal sea swells, night emissive lighting, and spatial chunk streaming.
+   * Advances atmosphere, coastal sea swells, night emissive lighting, spatial chunk streaming,
+   * animated tea shops, road traffic, and sidewalk pedestrians.
    * Returns true if streamed colliders changed so PlayerController can refresh its active list.
    */
-  update(dt: number, focusX = 22.5, focusZ = 2.5, camera?: THREE.Camera): boolean {
+  update(
+    dt: number,
+    focusX = 22.5,
+    focusZ = 2.5,
+    camera?: THREE.Camera,
+    playerPos?: { x: number; z: number },
+    callbacks?: SceneUpdateCallbacks,
+  ): boolean {
     this.atmosphere.update(dt, this.scene, focusX, focusZ, this.activePreset);
     const atm = this.atmosphere.getState();
     this.materials.update(dt, atm.nightGlowFactor, this.activePreset.waterDetailHigh);
-    return this.worldStreamer.update(dt, focusX, focusZ, camera);
+    const changed = this.worldStreamer.update(
+      dt,
+      focusX,
+      focusZ,
+      camera,
+      callbacks?.onTeaShopSfx,
+    );
+
+    const colliders = this.getColliders();
+    this.pedestrianSystem.update(
+      dt,
+      focusX,
+      focusZ,
+      camera,
+      colliders,
+      this.trafficSystem.getTrafficSnapshots(),
+      playerPos,
+    );
+    this.trafficSystem.update(
+      dt,
+      focusX,
+      focusZ,
+      camera,
+      colliders,
+      this.pedestrianSystem.getPedestrians(),
+      playerPos,
+      callbacks?.onVehicleHorn,
+    );
+
+    return changed;
   }
 
   dispose(): void {
+    this.arjunRig.dispose();
     this.atmosphere.dispose();
     this.worldStreamer.dispose();
+    this.trafficSystem.dispose();
+    this.pedestrianSystem.dispose();
     this.scene.clear();
   }
 }

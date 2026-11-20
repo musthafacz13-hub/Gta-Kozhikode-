@@ -14,6 +14,7 @@ const _hemiGround = new THREE.Color();
 export interface AtmosphereState {
   hours: number;
   clockFormatted: string;
+  weatherLabel: string;
   nightGlowFactor: number;
   exposure: number;
 }
@@ -162,10 +163,20 @@ export class AtmosphereSystem {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
 
+  getWeatherLabel(): string {
+    const wrapped = ((this.hours % 24) + 24) % 24;
+    if (wrapped >= 5.2 && wrapped < 7.8) return 'Dawn Mist';
+    if (wrapped >= 7.8 && wrapped < 16.0) return 'Clear Coastal';
+    if (wrapped >= 16.0 && wrapped < 19.0) return 'Golden Haze';
+    if (wrapped >= 19.0 && wrapped < 20.5) return 'Evening Breeze';
+    return 'Clear Night';
+  }
+
   getState(): AtmosphereState {
     return {
       hours: this.hours,
       clockFormatted: this.getClockFormatted(),
+      weatherLabel: this.getWeatherLabel(),
       nightGlowFactor: this.nightGlowFactor,
       exposure: this.exposure,
     };

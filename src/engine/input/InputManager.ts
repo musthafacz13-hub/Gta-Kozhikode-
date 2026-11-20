@@ -1,4 +1,11 @@
-export type InputAction = 'sprint' | 'jump' | 'interact' | 'pause' | 'toggle_camera';
+export type InputAction =
+  | 'sprint'
+  | 'walk'
+  | 'jump'
+  | 'interact'
+  | 'pause'
+  | 'toggle_camera'
+  | 'map';
 
 export interface InputFrameState {
   moveX: number;
@@ -10,30 +17,39 @@ export interface InputFrameState {
   justPressed: Record<InputAction, boolean>;
 }
 
-const KEY_TO_ACTION: Record<string, InputAction> = {
+const DEFAULT_KEY_TO_ACTION: Record<string, InputAction> = {
   ShiftLeft: 'sprint',
   ShiftRight: 'sprint',
+  AltLeft: 'walk',
+  KeyC: 'walk',
   Space: 'jump',
   KeyE: 'interact',
   Escape: 'pause',
   KeyV: 'toggle_camera',
+  KeyM: 'map',
 };
 
 export class InputManager {
   private readonly heldKeys = new Set<string>();
+  private keyToAction: Record<string, InputAction> = { ...DEFAULT_KEY_TO_ACTION };
+
   private readonly heldActions: Record<InputAction, boolean> = {
     sprint: false,
+    walk: false,
     jump: false,
     interact: false,
     pause: false,
     toggle_camera: false,
+    map: false,
   };
   private readonly pendingJustPressed: Record<InputAction, boolean> = {
     sprint: false,
+    walk: false,
     jump: false,
     interact: false,
     pause: false,
     toggle_camera: false,
+    map: false,
   };
 
   private lookDeltaX = 0;
@@ -41,7 +57,14 @@ export class InputManager {
   private zoomDelta = 0;
   private virtualMoveX = 0;
   private virtualMoveY = 0;
-  private sensitivity = 1.0;
+
+  private cameraTouchSensitivity = 1.0;
+  private mouseSensitivity = 1.0;
+  private joystickSensitivity = 1.0;
+  private joystickDeadzone = 0.08;
+  private touchRegionMode: 'right' | 'left' | 'any' = 'right';
+  private desktopPointerLockEnabled = false;
+  private pointerLocked = false;
 
   private lookPointerId: number | null = null;
   private lastLookX = 0;
@@ -55,7 +78,7 @@ export class InputManager {
       return;
     }
     this.heldKeys.add(e.code);
-    const action = KEY_TO_ACTION[e.code];
+    const action = this.keyToAction[e.code];
     if (action) {
       if (!this.heldActions[action]) {
         this.pendingJustPressed[action] = true;
@@ -66,10 +89,10 @@ export class InputManager {
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.heldKeys.delete(e.code);
-    const action = KEY_TO_ACTION[e.code];
+    const action = this.keyToAction[e.code];
     if (action) {
       let stillHeld = false;
-      for (const [code, mapped] of Object.entries(KEY_TO_ACTION)) {
+      for (const [code, mapped] of Object.entries(this.keyToAction)) {
         if (mapped === action && this.heldKeys.has(code)) {
           stillHeld = true;
           break;
@@ -84,18 +107,76 @@ export class InputManager {
       return;
     }
     // Only claim touches that directly hit the camera surface (canvas/host), never HUD controls.
-    if (this.boundTarget && e.target instanceof Node) {
+    if (this.boundTarget && typeof Node !== 'undefined' && e.target instanceof Node) {
       const targetEl = e.target as HTMLElement;
       if (targetEl.closest?.('[data-hud-control="true"]')) {
         return;
       }
     }
+
+    // For touch pointers on mobile landscape, isolate camera touches to the camera side
+    // so an accidental 5px miss next to the movement joystick never snaps the camera.
+    if (
+      e.pointerType === 'touch' &&
+      this.touchRegionMode !== 'any' &&
+      this.boundTarget &&
+      typeof this.boundTarget.getBoundingClientRect === 'function'
+    ) {
+      const rect = this.boundTarget.getBoundingClientRect();
+      if (rect.width > 0) {
+        const relX = (e.clientX - rect.left) / rect.width;
+        if (this.touchRegionMode === 'right' && relX < 0.36) {
+          return;
+        }
+        if (this.touchRegionMode === 'left' && relX > 0.64) {
+          return;
+        }
+      }
+    }
+
+    // Optional desktop pointer lock on canvas mouse click
+    if (
+      this.desktopPointerLockEnabled &&
+      e.pointerType === 'mouse' &&
+      e.button === 0 &&
+      this.boundTarget &&
+      typeof document !== 'undefined' &&
+      document.pointerLockElement !== this.boundTarget &&
+      typeof this.boundTarget.requestPointerLock === 'function'
+    ) {
+      try {
+        const maybePromise = this.boundTarget.requestPointerLock() as unknown;
+        if (
+          maybePromise &&
+          typeof (maybePromise as Promise<void>).catch === 'function'
+        ) {
+          (maybePromise as Promise<void>).catch(() => {
+            // Ignore pointer-lock rejection inside sandboxed iframes cleanly
+          });
+        }
+      } catch {
+        // Fallback smoothly to drag look
+      }
+    }
+
     this.lookPointerId = e.pointerId;
     this.lastLookX = e.clientX;
     this.lastLookY = e.clientY;
   };
 
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (
+      typeof document !== 'undefined' &&
+      this.boundTarget &&
+      document.pointerLockElement === this.boundTarget
+    ) {
+      const mx = Number.isFinite(e.movementX) ? e.movementX : 0;
+      const my = Number.isFinite(e.movementY) ? e.movementY : 0;
+      this.lookDeltaX += mx * this.mouseSensitivity;
+      this.lookDeltaY += my * this.mouseSensitivity;
+      return;
+    }
+
     if (this.lookPointerId !== e.pointerId) {
       return;
     }
@@ -103,8 +184,9 @@ export class InputManager {
     const dy = e.clientY - this.lastLookY;
     this.lastLookX = e.clientX;
     this.lastLookY = e.clientY;
-    this.lookDeltaX += dx * this.sensitivity;
-    this.lookDeltaY += dy * this.sensitivity;
+    const sens = e.pointerType === 'mouse' ? this.mouseSensitivity : this.cameraTouchSensitivity;
+    this.lookDeltaX += dx * sens;
+    this.lookDeltaY += dy * sens;
   };
 
   private readonly onPointerUpOrCancel = (e: PointerEvent): void => {
@@ -123,9 +205,22 @@ export class InputManager {
     this.clearAll();
   };
 
+  private readonly onOrientationChange = (): void => {
+    this.clearAll();
+  };
+
   private readonly onVisibilityChange = (): void => {
     if (typeof document !== 'undefined' && document.hidden) {
       this.clearAll();
+      this.releasePointerLock();
+    }
+  };
+
+  private readonly onPointerLockChange = (): void => {
+    if (typeof document === 'undefined') return;
+    this.pointerLocked = Boolean(this.boundTarget && document.pointerLockElement === this.boundTarget);
+    if (!this.pointerLocked) {
+      this.lookPointerId = null;
     }
   };
 
@@ -139,12 +234,14 @@ export class InputManager {
       window.addEventListener('keydown', this.onKeyDown);
       window.addEventListener('keyup', this.onKeyUp);
       window.addEventListener('blur', this.onWindowBlur);
+      window.addEventListener('orientationchange', this.onOrientationChange);
       window.addEventListener('pointermove', this.onPointerMove);
       window.addEventListener('pointerup', this.onPointerUpOrCancel);
       window.addEventListener('pointercancel', this.onPointerUpOrCancel);
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this.onVisibilityChange);
+      document.addEventListener('pointerlockchange', this.onPointerLockChange);
     }
     target.addEventListener('pointerdown', this.onPointerDown);
     target.addEventListener('wheel', this.onWheel, { passive: false });
@@ -155,16 +252,19 @@ export class InputManager {
       return;
     }
     this.attached = false;
+    this.releasePointerLock();
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', this.onKeyDown);
       window.removeEventListener('keyup', this.onKeyUp);
       window.removeEventListener('blur', this.onWindowBlur);
+      window.removeEventListener('orientationchange', this.onOrientationChange);
       window.removeEventListener('pointermove', this.onPointerMove);
       window.removeEventListener('pointerup', this.onPointerUpOrCancel);
       window.removeEventListener('pointercancel', this.onPointerUpOrCancel);
     }
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
+      document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     }
     if (this.boundTarget) {
       this.boundTarget.removeEventListener('pointerdown', this.onPointerDown);
@@ -174,14 +274,87 @@ export class InputManager {
     this.clearAll();
   }
 
+  getKeyBindings(): Record<string, InputAction> {
+    return { ...this.keyToAction };
+  }
+
+  setKeyBinding(code: string, action: InputAction | null): void {
+    if (action === null) {
+      delete this.keyToAction[code];
+    } else {
+      this.keyToAction[code] = action;
+    }
+  }
+
+  resetKeyBindings(): void {
+    this.keyToAction = { ...DEFAULT_KEY_TO_ACTION };
+  }
+
   setSensitivity(value: number): void {
-    this.sensitivity = Math.max(0.25, Math.min(3.0, value));
+    const clamped = Math.max(0.25, Math.min(3.0, value));
+    this.cameraTouchSensitivity = clamped;
+    this.mouseSensitivity = clamped;
+  }
+
+  setCameraTouchSensitivity(value: number): void {
+    this.cameraTouchSensitivity = Math.max(0.25, Math.min(3.0, value));
+  }
+
+  setMouseSensitivity(value: number): void {
+    this.mouseSensitivity = Math.max(0.25, Math.min(3.0, value));
+  }
+
+  setJoystickConfig(deadzone: number, sensitivity: number): void {
+    this.joystickDeadzone = Math.max(0.02, Math.min(0.25, deadzone));
+    this.joystickSensitivity = Math.max(0.5, Math.min(1.6, sensitivity));
+  }
+
+  getJoystickConfig(): { deadzone: number; sensitivity: number } {
+    return {
+      deadzone: this.joystickDeadzone,
+      sensitivity: this.joystickSensitivity,
+    };
+  }
+
+  setTouchRegionMode(mode: 'right' | 'left' | 'any'): void {
+    this.touchRegionMode = mode;
+  }
+
+  enableDesktopPointerLock(enabled: boolean): void {
+    this.desktopPointerLockEnabled = enabled;
+    if (!enabled) {
+      this.releasePointerLock();
+    }
+  }
+
+  isPointerLocked(): boolean {
+    return this.pointerLocked;
+  }
+
+  releasePointerLock(): void {
+    this.pointerLocked = false;
+    if (
+      typeof document !== 'undefined' &&
+      document.pointerLockElement &&
+      typeof document.exitPointerLock === 'function'
+    ) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore if document is not pointer-locked
+      }
+    }
   }
 
   setVirtualAxes(x: number, y: number): void {
     const safeX = Number.isFinite(x) ? x : 0;
     const safeY = Number.isFinite(y) ? y : 0;
     const len = Math.hypot(safeX, safeY);
+    if (len < this.joystickDeadzone) {
+      this.virtualMoveX = 0;
+      this.virtualMoveY = 0;
+      return;
+    }
     if (len > 1) {
       this.virtualMoveX = safeX / len;
       this.virtualMoveY = safeY / len;
@@ -199,8 +372,8 @@ export class InputManager {
    * Programmatic look/camera-drag helper for unit testing simultaneous multi-touch & camera isolation.
    */
   addLookDelta(dx: number, dy: number): void {
-    this.lookDeltaX += dx * this.sensitivity;
-    this.lookDeltaY += dy * this.sensitivity;
+    this.lookDeltaX += dx * this.cameraTouchSensitivity;
+    this.lookDeltaY += dy * this.cameraTouchSensitivity;
   }
 
   triggerAction(action: InputAction, held = false): void {

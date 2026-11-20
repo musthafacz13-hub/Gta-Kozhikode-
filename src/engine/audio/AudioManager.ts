@@ -9,6 +9,7 @@ import type {
   FootstepSurface,
   GameSfxEvent,
   MusicContextId,
+  TeaShopSfxEvent,
   VehicleAudioKind,
   VehicleSfxEvent,
   WeaponAudioArchetype,
@@ -270,8 +271,36 @@ export class AudioManager {
     this.soundscapes?.playCharacterSfx(event);
   }
 
-  playVehicleEvent(kind: VehicleAudioKind, event: VehicleSfxEvent, pan = 0): void {
-    this.soundscapes?.playVehicleEvent(kind, event, pan);
+  playVehicleEvent(kind: VehicleAudioKind, event: VehicleSfxEvent, pan = 0, distanceGainScale = 1): void {
+    this.soundscapes?.playVehicleEvent(kind, event, pan, distanceGainScale);
+  }
+
+  playVehicleHornSpatial(
+    kind: VehicleAudioKind,
+    vehicleX: number,
+    vehicleZ: number,
+    listenerX: number,
+    listenerZ: number,
+    listenerYaw: number,
+    maxRangeMeters = 95,
+  ): boolean {
+    if (!this.ctx || !this.unlocked || this.suspended) return false;
+    const dx = vehicleX - listenerX;
+    const dz = vehicleZ - listenerZ;
+    const dist = Math.hypot(dx, dz);
+    if (dist > maxRangeMeters) return false;
+    const gainScale = Math.max(0.08, Math.pow(1 - dist / maxRangeMeters, 1.45));
+    // Camera forward = (-sin(yaw), -cos(yaw)); right = (cos(yaw), -sin(yaw))
+    const rightDot = dx * Math.cos(listenerYaw) - dz * Math.sin(listenerYaw);
+    const pan = Math.max(-1, Math.min(1, rightDot / Math.max(10, dist * 0.75)));
+    this.soundscapes?.playVehicleEvent(kind, 'horn', pan, gainScale);
+    return true;
+  }
+
+  triggerTeaShopSfx(event: TeaShopSfxEvent, distanceMeters: number, pan = 0): void {
+    if (!this.ctx || !this.unlocked || this.suspended || distanceMeters > 42) return;
+    const proximityGain = Math.max(0.06, 1 - distanceMeters / 42);
+    this.soundscapes?.playTeaShopSfx(event, proximityGain, pan);
   }
 
   playWeaponCue(archetype: WeaponAudioArchetype): void {

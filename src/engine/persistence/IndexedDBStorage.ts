@@ -1,5 +1,7 @@
+import type { ThirdPersonCameraPreset } from '../camera/CameraManager.ts';
 import type { Logger } from '../core/Logger.ts';
 import type {
+  ControlLayoutMode,
   GameSettings,
   GraphicsTier,
   LanguageMode,
@@ -12,6 +14,12 @@ const DB_NAME = 'gta_kozhikode_db';
 const SETTINGS_STORE = 'settings';
 const SAVE_SLOTS_STORE = 'save_slots';
 const SETTINGS_KEY = 'active_settings';
+
+function clampNum(val: unknown, fallback: number, min: number, max: number): number {
+  return typeof val === 'number' && Number.isFinite(val)
+    ? Math.max(min, Math.min(max, val))
+    : fallback;
+}
 
 export function createDefaultSettings(): GameSettings {
   return {
@@ -27,6 +35,22 @@ export function createDefaultSettings(): GameSettings {
     ambientVolume: 0.78,
     language: 'mixed',
     touchSensitivity: 1.0,
+    cameraSensitivity: 1.0,
+    cameraDistanceScale: 1.0,
+    cameraPreset: 'standard',
+    joystickSensitivity: 1.0,
+    joystickDeadzone: 0.08,
+    joystickSize: 1.0,
+    actionButtonSize: 1.0,
+    controlLayout: 'standard',
+    controlOffsets: {
+      joystickX: 0,
+      joystickY: 0,
+      actionsX: 0,
+      actionsY: 0,
+    },
+    motionSensitivity: 1.0,
+    desktopPointerLock: true,
     hudOpacity: 0.85,
     hudScale: 1.0,
     updatedAt: Date.now(),
@@ -41,16 +65,19 @@ export function sanitizeSettings(raw: Partial<GameSettings> | null | undefined):
   const validTiers: GraphicsTier[] = ['low', 'medium', 'high', 'ultra'];
   const validLangs: LanguageMode[] = ['en', 'ml', 'mixed'];
   const validTimes: TimeOfDayPreset[] = ['dawn', 'noon', 'golden', 'night', 'cycle'];
+  const validPresets: ThirdPersonCameraPreset[] = ['close', 'standard', 'wide'];
+  const validLayouts: ControlLayoutMode[] = ['standard', 'compact', 'left_handed'];
+
+  const touchSens = clampNum(raw.touchSensitivity, defaults.touchSensitivity, 0.25, 3.0);
+  const camSens = clampNum(raw.cameraSensitivity, touchSens, 0.25, 3.0);
+  const rawOffsets = raw.controlOffsets;
 
   return {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
     graphicsTier: validTiers.includes(raw.graphicsTier as GraphicsTier)
       ? (raw.graphicsTier as GraphicsTier)
       : defaults.graphicsTier,
-    pixelRatioCap:
-      typeof raw.pixelRatioCap === 'number' && Number.isFinite(raw.pixelRatioCap)
-        ? Math.max(0.75, Math.min(2.0, raw.pixelRatioCap))
-        : defaults.pixelRatioCap,
+    pixelRatioCap: clampNum(raw.pixelRatioCap, defaults.pixelRatioCap, 0.75, 2.0),
     adaptiveResolution:
       typeof raw.adaptiveResolution === 'boolean'
         ? raw.adaptiveResolution
@@ -59,37 +86,39 @@ export function sanitizeSettings(raw: Partial<GameSettings> | null | undefined):
       ? (raw.timeOfDayPreset as TimeOfDayPreset)
       : defaults.timeOfDayPreset,
     masterMuted: typeof raw.masterMuted === 'boolean' ? raw.masterMuted : defaults.masterMuted,
-    masterVolume:
-      typeof raw.masterVolume === 'number' && Number.isFinite(raw.masterVolume)
-        ? Math.max(0, Math.min(1, raw.masterVolume))
-        : defaults.masterVolume,
-    musicVolume:
-      typeof raw.musicVolume === 'number' && Number.isFinite(raw.musicVolume)
-        ? Math.max(0, Math.min(1, raw.musicVolume))
-        : defaults.musicVolume,
-    sfxVolume:
-      typeof raw.sfxVolume === 'number' && Number.isFinite(raw.sfxVolume)
-        ? Math.max(0, Math.min(1, raw.sfxVolume))
-        : defaults.sfxVolume,
-    ambientVolume:
-      typeof raw.ambientVolume === 'number' && Number.isFinite(raw.ambientVolume)
-        ? Math.max(0, Math.min(1, raw.ambientVolume))
-        : defaults.ambientVolume,
+    masterVolume: clampNum(raw.masterVolume, defaults.masterVolume, 0, 1),
+    musicVolume: clampNum(raw.musicVolume, defaults.musicVolume, 0, 1),
+    sfxVolume: clampNum(raw.sfxVolume, defaults.sfxVolume, 0, 1),
+    ambientVolume: clampNum(raw.ambientVolume, defaults.ambientVolume, 0, 1),
     language: validLangs.includes(raw.language as LanguageMode)
       ? (raw.language as LanguageMode)
       : defaults.language,
-    touchSensitivity:
-      typeof raw.touchSensitivity === 'number' && Number.isFinite(raw.touchSensitivity)
-        ? Math.max(0.25, Math.min(3.0, raw.touchSensitivity))
-        : defaults.touchSensitivity,
-    hudOpacity:
-      typeof raw.hudOpacity === 'number' && Number.isFinite(raw.hudOpacity)
-        ? Math.max(0.35, Math.min(1.0, raw.hudOpacity))
-        : defaults.hudOpacity,
-    hudScale:
-      typeof raw.hudScale === 'number' && Number.isFinite(raw.hudScale)
-        ? Math.max(0.75, Math.min(1.35, raw.hudScale))
-        : defaults.hudScale,
+    touchSensitivity: touchSens,
+    cameraSensitivity: camSens,
+    cameraDistanceScale: clampNum(raw.cameraDistanceScale, defaults.cameraDistanceScale, 0.7, 1.4),
+    cameraPreset: validPresets.includes(raw.cameraPreset as ThirdPersonCameraPreset)
+      ? (raw.cameraPreset as ThirdPersonCameraPreset)
+      : defaults.cameraPreset,
+    joystickSensitivity: clampNum(raw.joystickSensitivity, defaults.joystickSensitivity, 0.5, 1.6),
+    joystickDeadzone: clampNum(raw.joystickDeadzone, defaults.joystickDeadzone, 0.02, 0.25),
+    joystickSize: clampNum(raw.joystickSize, defaults.joystickSize, 0.75, 1.35),
+    actionButtonSize: clampNum(raw.actionButtonSize, defaults.actionButtonSize, 0.8, 1.35),
+    controlLayout: validLayouts.includes(raw.controlLayout as ControlLayoutMode)
+      ? (raw.controlLayout as ControlLayoutMode)
+      : defaults.controlLayout,
+    controlOffsets: {
+      joystickX: clampNum(rawOffsets?.joystickX, 0, -48, 48),
+      joystickY: clampNum(rawOffsets?.joystickY, 0, -48, 48),
+      actionsX: clampNum(rawOffsets?.actionsX, 0, -48, 48),
+      actionsY: clampNum(rawOffsets?.actionsY, 0, -48, 48),
+    },
+    motionSensitivity: clampNum(raw.motionSensitivity, defaults.motionSensitivity, 0.3, 1.0),
+    desktopPointerLock:
+      typeof raw.desktopPointerLock === 'boolean'
+        ? raw.desktopPointerLock
+        : defaults.desktopPointerLock,
+    hudOpacity: clampNum(raw.hudOpacity, defaults.hudOpacity, 0.35, 1.0),
+    hudScale: clampNum(raw.hudScale, defaults.hudScale, 0.75, 1.35),
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
   };
 }

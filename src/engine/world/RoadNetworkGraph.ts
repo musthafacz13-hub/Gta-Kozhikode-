@@ -107,6 +107,7 @@ const RAW_NODES: RoadGraphNode[] = [
   makeGeoNode('j_puthiyangadi', 'Puthiyangadi Junction', 11.305, 75.758),
 
   // Place-anchored District Towns, Bridges, Beaches & Highlands
+  makePlaceNode('nadakkavu'),
   makePlaceNode('west_hill_town'),
   makePlaceNode('kallai_bridge'),
   makePlaceNode('thondayad'),
@@ -189,9 +190,10 @@ const RAW_EDGES: EdgeDef[] = [
   { from: 'j_kallai_beach', to: 'j_railway_st', roadName: 'Kallai-Station Rd', highwayCode: 'City Arterial', highwayClass: 'arterial', widthWorld: 12, speedKmh: 45 },
   { from: 'j_railway_st', to: 'j_kallai_city', roadName: 'Kallai Road', highwayCode: 'City Arterial', highwayClass: 'arterial', widthWorld: 12, speedKmh: 50 },
 
-  // Coastal Corridor North & South (Beach Rd -> West Hill -> Elathur / Beypore)
+  // Coastal Corridor North & South (Beach Rd -> Nadakkavu -> West Hill -> Elathur / Beypore)
   { from: 'j_westhill_beach', to: 'west_hill_town', roadName: 'Kannur Road (West Hill)', highwayCode: 'NH-66 Old', highwayClass: 'arterial', widthWorld: 13, speedKmh: 55 },
-  { from: 'j_nadakkavu_east', to: 'west_hill_town', roadName: 'Nadakkavu-West Hill Rd', highwayCode: 'City Arterial', highwayClass: 'arterial', widthWorld: 13, speedKmh: 55 },
+  { from: 'j_nadakkavu_east', to: 'nadakkavu', roadName: 'Nadakkavu Cross Kannur Rd', highwayCode: 'City Arterial', highwayClass: 'arterial', widthWorld: 13, speedKmh: 48 },
+  { from: 'nadakkavu', to: 'west_hill_town', roadName: 'Nadakkavu-West Hill Kannur Rd', highwayCode: 'City Arterial', highwayClass: 'arterial', widthWorld: 13, speedKmh: 55 },
   { from: 'west_hill_town', to: 'j_puthiyangadi', roadName: 'Kannur Road (Puthiyangadi)', highwayCode: 'NH-66 Old', highwayClass: 'arterial', widthWorld: 13, speedKmh: 60 },
   { from: 'j_puthiyangadi', to: 'elathur', roadName: 'Elathur-Korapuzha Approach', highwayCode: 'NH-66', highwayClass: 'NH', widthWorld: 16, speedKmh: 75, isBridge: true },
   { from: 'j_kallai_beach', to: 'beypore_harbour', roadName: 'Beypore Coastal Highway', highwayCode: 'Coastal Rd', highwayClass: 'coastal', widthWorld: 12, speedKmh: 55 },

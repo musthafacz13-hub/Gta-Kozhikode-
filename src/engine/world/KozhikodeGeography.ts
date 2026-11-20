@@ -63,7 +63,7 @@ export const PROTAGONIST_HOME_COORDS = {
   gateX: -14,
   gateZ: -133,
   porchX: -14,
-  porchZ: -139.5,
+  porchZ: -138.0,
 } as const;
 
 function mapPlaceToRegion(place: GazetteerPlace): KozhikodeRegionSpec {
@@ -76,6 +76,8 @@ function mapPlaceToRegion(place: GazetteerPlace): KozhikodeRegionSpec {
     'kozhikode_beach',
     'south_beach',
     'protagonist_home',
+    'nadakkavu',
+    'medical_college',
   ]);
   const horizonIds = new Set(['thondayad', 'beypore_harbour']);
 
@@ -92,9 +94,11 @@ function mapPlaceToRegion(place: GazetteerPlace): KozhikodeRegionSpec {
 
   let biome: KozhikodeRegionSpec['biome'] = 'highway_suburb';
   if (place.id === 'mananchira') biome = 'heritage_civic';
-  else if (['sm_street', 'palayam', 'mavoor_road', 'railway_station'].includes(place.id)) biome = 'commercial_bazaar';
-  else if (place.id === 'protagonist_home') biome = 'residential';
-  else if (place.category === 'harbour') biome = 'harbour';
+  else if (['sm_street', 'palayam', 'mavoor_road', 'railway_station', 'nadakkavu'].includes(place.id)) {
+    biome = 'commercial_bazaar';
+  } else if (place.id === 'protagonist_home' || place.id === 'west_hill_town') {
+    biome = 'residential';
+  } else if (place.category === 'harbour') biome = 'harbour';
   else if (place.biome === 'coastal') biome = 'coastal_beach';
   else if (place.category === 'river_bridge') biome = 'river_valley';
   else if (place.biome === 'highland') biome = 'highland_ghat';
@@ -103,6 +107,7 @@ function mapPlaceToRegion(place: GazetteerPlace): KozhikodeRegionSpec {
   if (place.id === 'mananchira') radius = 52;
   else if (['sm_street', 'kozhikode_beach', 'south_beach', 'protagonist_home'].includes(place.id)) radius = 58;
   else if (['palayam', 'mavoor_road', 'railway_station'].includes(place.id)) radius = 64;
+  else if (['nadakkavu', 'medical_college'].includes(place.id)) radius = 85;
   else if (place.zoomTier === 1) radius = 220;
 
   return {
@@ -128,17 +133,19 @@ function mapPlaceToRegion(place: GazetteerPlace): KozhikodeRegionSpec {
 export const KOZHIKODE_REGIONS: KozhikodeRegionSpec[] = KOZHIKODE_GAZETTEER_PLACES.map(mapPlaceToRegion);
 
 /**
- * Downtown street corridors preserving Phase 1/2 exact road geometry around Mananchira & West Hill.
+ * Downtown street corridors preserving Phase 1/2/3 exact road geometry while connecting
+ * West Hill, Nadakkavu, Mananchira, SM Street, Palayam, Mavoor Rd, and Railway Station.
  */
 export const KOZHIKODE_ROAD_CORRIDORS: RoadCorridorSpec[] = [
   // North-South Arterials
-  { id: 'beach_road', name: 'Kozhikode Beach Rd', axis: 'ns', coord: -62, start: -240, end: 260, width: 11, roadClass: 'coastal' },
-  { id: 'mananchira_west', name: 'Mananchira West Rd', axis: 'ns', coord: -34, start: -210, end: 240, width: 12, roadClass: 'street' },
-  { id: 'palayam_mavoor_ns', name: 'Palayam-SM Street Ave', axis: 'ns', coord: 34, start: -210, end: 250, width: 13, roadClass: 'arterial' },
-  { id: 'bypass_east', name: 'Mavoor-Palayam Link Rd', axis: 'ns', coord: 120, start: -200, end: 240, width: 13, roadClass: 'highway' },
+  { id: 'beach_road', name: 'Kozhikode Beach Rd', axis: 'ns', coord: -62, start: -290, end: 270, width: 11, roadClass: 'coastal' },
+  { id: 'mananchira_west', name: 'Mananchira West Rd', axis: 'ns', coord: -34, start: -290, end: 260, width: 12, roadClass: 'street' },
+  { id: 'palayam_mavoor_ns', name: 'Kannur Rd / Palayam Ave', axis: 'ns', coord: 34, start: -290, end: 270, width: 13, roadClass: 'arterial' },
+  { id: 'bypass_east', name: 'Mavoor-Palayam Link Rd', axis: 'ns', coord: 120, start: -240, end: 260, width: 13, roadClass: 'highway' },
   // East-West Arterials
+  { id: 'nadakkavu_cross_ew', name: 'Nadakkavu Cross Rd', axis: 'ew', coord: -188, start: -68, end: 180, width: 12, roadClass: 'arterial' },
   { id: 'west_hill_lane', name: 'West Hill Residential Rd', axis: 'ew', coord: -120, start: -68, end: 240, width: 10, roadClass: 'street' },
-  { id: 'mavoor_road_ew', name: 'Mavoor Rd / Vaikom Basheer Rd', axis: 'ew', coord: -35, start: -68, end: 260, width: 12, roadClass: 'arterial' },
+  { id: 'mavoor_road_ew', name: 'Mavoor Rd / Vaikom Basheer Rd', axis: 'ew', coord: -35, start: -68, end: 260, width: 13, roadClass: 'arterial' },
   { id: 'mananchira_south', name: 'Mananchira South / SM Entry', axis: 'ew', coord: 35, start: -68, end: 240, width: 11, roadClass: 'arterial' },
   { id: 'palayam_station_ew', name: 'Palayam-Station Link', axis: 'ew', coord: 120, start: -68, end: 240, width: 12, roadClass: 'arterial' },
   { id: 'kallai_road', name: 'Kallai-South Beach Rd', axis: 'ew', coord: 195, start: -68, end: 240, width: 12, roadClass: 'highway' },
@@ -177,8 +184,8 @@ export function getGroundHeightAt(x: number, z: number): number {
     return 0.0;
   }
 
-  // Downtown Phase 1/2 core preserves exact sidewalk/park/road heights
-  if (x >= -150 && x <= 265 && z >= -245 && z <= 255) {
+  // Downtown Phase 1/2/4 urban core preserves exact sidewalk/park/road heights
+  if (x >= -150 && x <= 265 && z >= -295 && z <= 275) {
     if (x >= -27.5 && x <= 27.5 && z >= -29 && z <= 29) {
       return 0.18;
     }

@@ -100,6 +100,26 @@ export const VEHICLE_VISUAL_MANIFEST: VehicleVisualSpec[] = [
   { id: 'beypore_fishing_boat', label: 'Beypore Timber Fishing Boat', category: 'boat', lod0TriBudget: 1500, lod1TriBudget: 220, supportsInstancing: true, phaseImplemented: 'phase2_static_prop' },
 ];
 
+export const DETAILED_VEHICLE_FLEET_CATALOG: VehicleVisualSpec[] = [
+  { id: 'maruti_swift', label: 'Maruti Suzuki Swift', category: 'car', lod0TriBudget: 1850, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'maruti_alto', label: 'Maruti Suzuki Alto', category: 'car', lod0TriBudget: 1650, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'maruti_baleno', label: 'Maruti Suzuki Baleno', category: 'car', lod0TriBudget: 1850, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'maruti_wagonr', label: 'Maruti Suzuki WagonR', category: 'car', lod0TriBudget: 1750, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'hyundai_i20', label: 'Hyundai i20', category: 'car', lod0TriBudget: 1880, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'hyundai_creta', label: 'Hyundai Creta', category: 'suv', lod0TriBudget: 2100, lod1TriBudget: 140, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'tata_nexon', label: 'Tata Nexon', category: 'suv', lod0TriBudget: 2050, lod1TriBudget: 140, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'suzuki_access_125', label: 'Suzuki Access 125', category: 'two_wheeler', lod0TriBudget: 1200, lod1TriBudget: 90, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'honda_activa', label: 'Honda Activa', category: 'two_wheeler', lod0TriBudget: 1150, lod1TriBudget: 90, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'hero_commuter', label: 'Hero Commuter Motorcycle', category: 'two_wheeler', lod0TriBudget: 1250, lod1TriBudget: 90, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'yamaha_fz', label: 'Yamaha Sports Motorcycle', category: 'two_wheeler', lod0TriBudget: 1380, lod1TriBudget: 90, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'royal_enfield', label: 'Royal Enfield Classic', category: 'two_wheeler', lod0TriBudget: 1450, lod1TriBudget: 90, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'ksrtc_bus', label: 'KSRTC Kerala Bus', category: 'bus', lod0TriBudget: 2200, lod1TriBudget: 160, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'kerala_private_bus', label: 'Kerala Private City Bus', category: 'bus', lod0TriBudget: 2200, lod1TriBudget: 160, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'auto_rickshaw', label: 'KL-11 Auto-Rickshaw', category: 'three_wheeler', lod0TriBudget: 1650, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'delivery_van', label: 'Malabar Delivery Van', category: 'delivery', lod0TriBudget: 1700, lod1TriBudget: 120, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+  { id: 'goods_truck', label: 'Kerala Goods Carrier Lorry', category: 'truck', lod0TriBudget: 2250, lod1TriBudget: 160, supportsInstancing: false, phaseImplemented: 'phase8_traffic' },
+];
+
 export interface WeaponVisualBlueprint {
   slotIndex: number;
   id: string;

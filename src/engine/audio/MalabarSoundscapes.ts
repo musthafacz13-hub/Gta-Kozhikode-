@@ -3,6 +3,7 @@ import type {
   CharacterSfxEvent,
   FootstepSurface,
   GameSfxEvent,
+  TeaShopSfxEvent,
   VehicleAudioKind,
   VehicleEngineProfile,
   VehicleSfxEvent,
@@ -15,6 +16,8 @@ export const VEHICLE_AUDIO_PROFILES: Record<VehicleAudioKind, VehicleEngineProfi
   auto_rickshaw: { kind: 'auto_rickshaw', baseHz: 62, maxHz: 175, harmonicMix: 0.55, pulseRateHz: 28, maxGain: 0.18 },
   car: { kind: 'car', baseHz: 54, maxHz: 165, harmonicMix: 0.25, pulseRateHz: 14, maxGain: 0.16 },
   bus: { kind: 'bus', baseHz: 42, maxHz: 118, harmonicMix: 0.48, pulseRateHz: 10, maxGain: 0.2 },
+  ksrtc_bus: { kind: 'ksrtc_bus', baseHz: 40, maxHz: 112, harmonicMix: 0.5, pulseRateHz: 10, maxGain: 0.21 },
+  private_bus: { kind: 'private_bus', baseHz: 45, maxHz: 126, harmonicMix: 0.46, pulseRateHz: 11, maxGain: 0.2 },
   truck: { kind: 'truck', baseHz: 38, maxHz: 108, harmonicMix: 0.52, pulseRateHz: 9, maxGain: 0.22 },
   boat: { kind: 'boat', baseHz: 46, maxHz: 122, harmonicMix: 0.42, pulseRateHz: 12, maxGain: 0.17 },
 };
@@ -44,10 +47,14 @@ export class MalabarSoundscapes {
   private crowdSource: AudioBufferSourceNode | null = null;
   private crowdGain: GainNode | null = null;
 
+  private teaFrySource: AudioBufferSourceNode | null = null;
+  private teaFryGain: GainNode | null = null;
+
   private ambienceStarted = false;
   private birdCooldownSec = 2.5;
   private nightCricketCooldownSec = 0.8;
   private distantVehicleCooldownSec = 6.0;
+  private teaShopCooldownSec = 1.8;
   private activeAmbienceLabel = 'Mananchira City Breeze';
 
   constructor(
@@ -144,6 +151,21 @@ export class MalabarSoundscapes {
     crowdBp.connect(this.crowdGain);
     this.crowdGain.connect(this.ambientBus);
     this.crowdSource.start();
+
+    // 5. Roadside Chai Peedika Oil Sizzle & Warm Kettle Loop (distance attenuated)
+    this.teaFrySource = this.ctx.createBufferSource();
+    this.teaFrySource.buffer = pinkBuf;
+    this.teaFrySource.loop = true;
+    const fryHp = this.ctx.createBiquadFilter();
+    fryHp.type = 'bandpass';
+    fryHp.frequency.value = 2650;
+    fryHp.Q.value = 1.1;
+    this.teaFryGain = this.ctx.createGain();
+    this.teaFryGain.gain.value = 0.0001;
+    this.teaFrySource.connect(fryHp);
+    fryHp.connect(this.teaFryGain);
+    this.teaFryGain.connect(this.ambientBus);
+    this.teaFrySource.start();
   }
 
   updateEnvironment(dt: number, env: AudioEnvironmentUpdate): void {
@@ -156,16 +178,22 @@ export class MalabarSoundscapes {
     const urbanWeight = env.isCoastal ? 0.32 : env.isHomeZone ? 0.45 : 0.92;
     const nightScale = 1 - env.nightGlowFactor * 0.55;
 
+    const teaDist = env.teaShopDistanceMeters ?? 999;
+    const teaWeight = teaDist < 42 ? Math.max(0, Math.min(1, 1 - teaDist / 42)) : 0;
+
     this.seaGain?.gain.setTargetAtTime(0.02 + coastalWeight * 0.16, now, 0.35);
     this.windGain?.gain.setTargetAtTime(0.018 + coastalWeight * 0.05, now, 0.4);
     this.trafficGain?.gain.setTargetAtTime((0.015 + urbanWeight * 0.065) * nightScale, now, 0.4);
     this.crowdGain?.gain.setTargetAtTime(
-      (env.isMarket ? 0.032 : urbanWeight * 0.014) * nightScale,
+      ((env.isMarket ? 0.032 : urbanWeight * 0.014) + teaWeight * 0.024) * nightScale,
       now,
       0.4,
     );
+    this.teaFryGain?.gain.setTargetAtTime(0.0001 + teaWeight * teaWeight * 0.036, now, 0.25);
 
-    if (env.isCoastal || coastalWeight > 0.65) {
+    if (teaWeight > 0.35) {
+      this.activeAmbienceLabel = 'Chai Peedika & Kozhikode Streets';
+    } else if (env.isCoastal || coastalWeight > 0.65) {
       this.activeAmbienceLabel = env.nightGlowFactor > 0.5 ? 'Arabian Sea Night Surf' : 'Arabian Sea Waves & Breeze';
     } else if (env.isHomeZone) {
       this.activeAmbienceLabel = env.nightGlowFactor > 0.5 ? 'West Hill Night Crickets' : 'West Hill Tropical Yard';
@@ -173,6 +201,17 @@ export class MalabarSoundscapes {
       this.activeAmbienceLabel = 'SM Street Bazaar & Traffic';
     } else {
       this.activeAmbienceLabel = env.nightGlowFactor > 0.5 ? 'Kozhikode Night Streets' : 'Mananchira City & Birds';
+    }
+
+    if (teaWeight > 0.08) {
+      this.teaShopCooldownSec -= dt;
+      if (this.teaShopCooldownSec <= 0) {
+        this.teaShopCooldownSec = 1.4 + Math.random() * 2.2;
+        const r = Math.random();
+        const kind: TeaShopSfxEvent =
+          r < 0.34 ? 'tea_pour' : r < 0.62 ? 'glass_clink' : r < 0.86 ? 'spoon_stir' : 'snack_fry';
+        this.playTeaShopSfx(kind, teaWeight * 0.85, (Math.random() - 0.5) * 0.4);
+      }
     }
 
     // Periodic daytime tropical birds
@@ -280,26 +319,81 @@ export class MalabarSoundscapes {
     panner.connect(event === 'passby' ? this.ambientBus : this.sfxBus);
 
     if (event === 'horn') {
-      const freqA = kind === 'bus' || kind === 'truck' ? 235 : kind === 'auto_rickshaw' ? 415 : 370;
-      const freqB = kind === 'bus' || kind === 'truck' ? 295 : freqA * 1.24;
-      for (const f of [freqA, freqB]) {
+      if (kind === 'private_bus') {
+        // Classic Kerala private bus two-pulse musical air-horn
+        const notes: Array<[number, number, number]> = [
+          [285, 0, 0.14],
+          [358, 0.15, 0.18],
+          [448, 0.15, 0.18],
+        ];
+        for (const [f, offset, dur] of notes) {
+          const t = now + offset;
+          const osc = this.ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(f, t);
+          const lp = this.ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = 1480;
+          const env = this.ctx.createGain();
+          const peak = 0.058 * distanceGainScale;
+          env.gain.setValueAtTime(0.0001, t);
+          env.gain.linearRampToValueAtTime(peak, t + 0.018);
+          env.gain.setValueAtTime(peak, t + dur - 0.04);
+          env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+          osc.connect(lp);
+          lp.connect(env);
+          env.connect(panner);
+          osc.start(t);
+          osc.stop(t + dur + 0.02);
+        }
+        return;
+      }
+
+      let freqs: number[] = [380, 475];
+      let dur = 0.24;
+      let peak = 0.055 * distanceGainScale;
+      let oscType: OscillatorType = 'sawtooth';
+
+      if (kind === 'ksrtc_bus' || kind === 'bus') {
+        freqs = [208, 262];
+        dur = 0.34;
+        peak = 0.072 * distanceGainScale;
+      } else if (kind === 'truck') {
+        freqs = [172, 218];
+        dur = 0.36;
+        peak = 0.075 * distanceGainScale;
+      } else if (kind === 'auto_rickshaw') {
+        freqs = [435, 540];
+        dur = 0.17;
+        peak = 0.052 * distanceGainScale;
+      } else if (kind === 'scooter') {
+        freqs = [545];
+        dur = 0.15;
+        peak = 0.044 * distanceGainScale;
+        oscType = 'triangle';
+      } else if (kind === 'motorcycle') {
+        freqs = [472];
+        dur = 0.18;
+        peak = 0.048 * distanceGainScale;
+      }
+
+      for (const f of freqs) {
         const osc = this.ctx.createOscillator();
-        osc.type = 'sawtooth';
+        osc.type = oscType;
         osc.frequency.setValueAtTime(f, now);
         const lp = this.ctx.createBiquadFilter();
         lp.type = 'lowpass';
-        lp.frequency.value = 1250;
+        lp.frequency.value = kind === 'scooter' || kind === 'auto_rickshaw' ? 1550 : 1220;
         const env = this.ctx.createGain();
-        const peak = 0.06 * distanceGainScale;
         env.gain.setValueAtTime(0.0001, now);
-        env.gain.linearRampToValueAtTime(peak, now + 0.02);
-        env.gain.setValueAtTime(peak, now + 0.18);
-        env.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+        env.gain.linearRampToValueAtTime(peak, now + 0.018);
+        env.gain.setValueAtTime(peak, now + Math.max(0.04, dur - 0.06));
+        env.gain.exponentialRampToValueAtTime(0.0001, now + dur);
         osc.connect(lp);
         lp.connect(env);
         env.connect(panner);
         osc.start(now);
-        osc.stop(now + 0.3);
+        osc.stop(now + dur + 0.03);
       }
       return;
     }
@@ -435,8 +529,88 @@ export class MalabarSoundscapes {
     src.start(now, 0, duration + 0.02);
   }
 
+  playTeaShopSfx(event: TeaShopSfxEvent, proximityGain = 1, pan = 0): void {
+    if (this.ctx.state !== 'running') return;
+    const scale = Math.max(0.05, Math.min(1, proximityGain));
+    const now = this.ctx.currentTime;
+    const panner = this.ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    panner.connect(this.ambientBus);
+
+    if (event === 'tea_pour') {
+      const buf = this.bufferCache.get('proc_pink_noise_short')!;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(1400, now);
+      bp.frequency.exponentialRampToValueAtTime(2400, now + 0.35);
+      bp.Q.value = 2.2;
+      const env = this.ctx.createGain();
+      env.gain.setValueAtTime(0.0001, now);
+      env.gain.linearRampToValueAtTime(0.048 * scale, now + 0.06);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+      src.connect(bp);
+      bp.connect(env);
+      env.connect(panner);
+      src.start(now, 0, 0.42);
+    } else if (event === 'glass_clink') {
+      for (const f of [2680, 4120]) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f + Math.random() * 140, now);
+        const env = this.ctx.createGain();
+        env.gain.setValueAtTime(0.0001, now);
+        env.gain.linearRampToValueAtTime(0.026 * scale, now + 0.003);
+        env.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+        osc.connect(env);
+        env.connect(panner);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      }
+    } else if (event === 'spoon_stir') {
+      for (let i = 0; i < 3; i++) {
+        const t = now + i * 0.095;
+        const osc = this.ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(3250 + i * 160, t);
+        const env = this.ctx.createGain();
+        env.gain.setValueAtTime(0.0001, t);
+        env.gain.linearRampToValueAtTime(0.022 * scale, t + 0.004);
+        env.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+        osc.connect(env);
+        env.connect(panner);
+        osc.start(t);
+        osc.stop(t + 0.085);
+      }
+    } else {
+      // Snack frying oil crackle burst
+      const buf = this.bufferCache.get('proc_pink_noise_short')!;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 2800;
+      const env = this.ctx.createGain();
+      env.gain.setValueAtTime(0.0001, now);
+      env.gain.linearRampToValueAtTime(0.036 * scale, now + 0.03);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
+      src.connect(hp);
+      hp.connect(env);
+      env.connect(panner);
+      src.start(now, 0, 0.38);
+    }
+  }
+
   dispose(): void {
-    for (const node of [this.seaSource, this.seaLfo, this.windSource, this.trafficSource, this.crowdSource]) {
+    for (const node of [
+      this.seaSource,
+      this.seaLfo,
+      this.windSource,
+      this.trafficSource,
+      this.crowdSource,
+      this.teaFrySource,
+    ]) {
       try {
         node?.stop();
         node?.disconnect();
@@ -449,6 +623,7 @@ export class MalabarSoundscapes {
     this.windGain?.disconnect();
     this.trafficGain?.disconnect();
     this.crowdGain?.disconnect();
+    this.teaFryGain?.disconnect();
     this.ambienceStarted = false;
   }
 

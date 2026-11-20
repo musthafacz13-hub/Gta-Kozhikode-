@@ -20,10 +20,14 @@ export type VehicleAudioKind =
   | 'auto_rickshaw'
   | 'car'
   | 'bus'
+  | 'ksrtc_bus'
+  | 'private_bus'
   | 'truck'
   | 'boat';
 
 export type VehicleSfxEvent = 'horn' | 'brake' | 'tire_screech' | 'accel' | 'passby';
+
+export type TeaShopSfxEvent = 'tea_pour' | 'glass_clink' | 'spoon_stir' | 'snack_fry';
 
 export type CharacterSfxEvent =
   | 'jump'
@@ -65,6 +69,7 @@ export interface AudioEnvironmentUpdate {
   isMoving: boolean;
   isSprinting: boolean;
   speed: number;
+  teaShopDistanceMeters?: number;
 }
 
 export interface AudioStateSnapshot {

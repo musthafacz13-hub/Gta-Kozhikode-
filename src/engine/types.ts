@@ -1,4 +1,13 @@
 import type { AudioStateSnapshot } from './audio/AudioTypes.ts';
+import type { ThirdPersonCameraPreset } from './camera/CameraManager.ts';
+import type { ContextualInteractionTarget } from './interaction/InteractionResolver.ts';
+import type { ArjunAnimationState } from './player/ArjunAnimator.ts';
+import type { PlayerMovementGait } from './player/PlayerController.ts';
+import type {
+  BuildingArchetype,
+  BuildingCategory,
+  BuildingOwnershipStatus,
+} from './world/BuildingSystem.ts';
 import type { KozhikodeBiomeType } from './world/GeoProjection.ts';
 import type { RoadRouteWaypoint } from './world/RoadNetworkGraph.ts';
 
@@ -9,6 +18,15 @@ export type GraphicsTier = 'low' | 'medium' | 'high' | 'ultra';
 export type LanguageMode = 'en' | 'ml' | 'mixed';
 
 export type TimeOfDayPreset = 'dawn' | 'noon' | 'golden' | 'night' | 'cycle';
+
+export type ControlLayoutMode = 'standard' | 'compact' | 'left_handed';
+
+export interface ControlLayoutOffsets {
+  joystickX: number;
+  joystickY: number;
+  actionsX: number;
+  actionsY: number;
+}
 
 export interface GameSettings {
   schemaVersion: number;
@@ -23,6 +41,17 @@ export interface GameSettings {
   ambientVolume: number;
   language: LanguageMode;
   touchSensitivity: number;
+  cameraSensitivity: number;
+  cameraDistanceScale: number;
+  cameraPreset: ThirdPersonCameraPreset;
+  joystickSensitivity: number;
+  joystickDeadzone: number;
+  joystickSize: number;
+  actionButtonSize: number;
+  controlLayout: ControlLayoutMode;
+  controlOffsets: ControlLayoutOffsets;
+  motionSensitivity: number;
+  desktopPointerLock: boolean;
   hudOpacity: number;
   hudScale: number;
   updatedAt: number;
@@ -79,6 +108,24 @@ export interface LogEntry {
 
 export type CameraRigMode = 'title_orbit' | 'free_inspect';
 
+export interface NearbyBuildingSummary {
+  id: string;
+  name: string;
+  malayalamName: string;
+  archetype: BuildingArchetype;
+  category: BuildingCategory;
+  ownershipStatus: BuildingOwnershipStatus;
+  interiorEligible: boolean;
+  distanceMeters: number;
+  lat: number;
+  lon: number;
+  futureHooks: {
+    businessTag?: string;
+    propertyPurchaseTag?: string;
+    missionTag?: string;
+  };
+}
+
 export interface ActiveDestinationState {
   id: string;
   name: string;
@@ -98,6 +145,7 @@ export interface ActiveDestinationState {
 export interface EngineHudSnapshot {
   mode: GameModeState;
   cameraMode: CameraRigMode;
+  cameraPreset?: ThirdPersonCameraPreset;
   cameraX: number;
   cameraZ: number;
   cameraYaw: number;
@@ -108,16 +156,29 @@ export interface EngineHudSnapshot {
   playerHeading: number;
   isMoving: boolean;
   isSprinting: boolean;
+  isGrounded?: boolean;
+  movementGait?: PlayerMovementGait;
+  animationState?: ArjunAnimationState;
+  interactionNotice?: { id: number; text: string } | null;
+  pointerLocked?: boolean;
   districtName: string;
   talukName: string;
   biome: KozhikodeBiomeType;
   clockFormatted: string;
+  weatherLabel?: string;
   activeChunks: number;
   totalRegions: number;
   gazetteerCount: number;
   nearHome: boolean;
   homeDistanceMeters: number;
+  nearbyBuilding?: NearbyBuildingSummary | null;
+  nearbyInteraction?: ContextualInteractionTarget | null;
   activeDestination: ActiveDestinationState | null;
+  ambientStats?: {
+    activeVehicles: number;
+    activePedestrians: number;
+    nearTeaShop: boolean;
+  };
   audio: AudioStateSnapshot;
   showDebugGrid: boolean;
   activeSlotId: string;

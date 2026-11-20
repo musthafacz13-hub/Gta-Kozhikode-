@@ -26,10 +26,40 @@ export class MaterialLibrary {
   readonly shadeTrunkMat: THREE.MeshStandardMaterial;
   readonly shadeLeafMat: THREE.MeshStandardMaterial;
 
+  // Pooled urban architecture & street infrastructure materials
+  readonly facadeWarmMat: THREE.MeshStandardMaterial;
+  readonly facadeCreamMat: THREE.MeshStandardMaterial;
+  readonly facadeTealMat: THREE.MeshStandardMaterial;
+  readonly facadeApartmentMat: THREE.MeshStandardMaterial;
+  readonly facadeHospitalMat: THREE.MeshStandardMaterial;
+  readonly facadeOfficeMat: THREE.MeshStandardMaterial;
+
+  readonly stuccoCreamMat: THREE.MeshStandardMaterial;
+  readonly stuccoWarmMat: THREE.MeshStandardMaterial;
+  readonly stuccoMintMat: THREE.MeshStandardMaterial;
+  readonly stuccoOchreMat: THREE.MeshStandardMaterial;
+  readonly stuccoSlateMat: THREE.MeshStandardMaterial;
+
+  readonly concretePillarMat: THREE.MeshStandardMaterial;
+  readonly shutterSteelMat: THREE.MeshStandardMaterial;
+  readonly darkIronMat: THREE.MeshStandardMaterial;
+  readonly parapetMat: THREE.MeshStandardMaterial;
+  readonly teakWoodMat: THREE.MeshStandardMaterial;
+  readonly waterTankMat: THREE.MeshStandardMaterial;
+  readonly curtainGlassMat: THREE.MeshPhysicalMaterial;
+  readonly foliageShrubMat: THREE.MeshStandardMaterial;
+  readonly rockLateriteMat: THREE.MeshStandardMaterial;
+  readonly utilityPoleMat: THREE.MeshStandardMaterial;
+  readonly constructionOrangeMat: THREE.MeshStandardMaterial;
+  readonly medicalCrossRedMat: THREE.MeshStandardMaterial;
+
   private readonly seaTimeUniform = { value: 0 };
+  private readonly signMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+  private readonly awningMaterialCache = new Map<number, THREE.MeshStandardMaterial>();
 
   constructor(assets: AssetManager) {
     this.textures = createKozhikodeTextures(assets);
+    this.assetsRef = assets;
 
     const sandTex = assets.getOrCreateProceduralTexture(
       'kzd_beach_sand',
@@ -178,6 +208,43 @@ export class MaterialLibrary {
     this.shadeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4636, roughness: 0.94 });
     this.shadeLeafMat = new THREE.MeshStandardMaterial({ color: 0x245c2a, roughness: 0.8 });
 
+    // Pooled Building & Street Furniture Materials
+    this.facadeWarmMat = new THREE.MeshStandardMaterial({ map: this.textures.shopFacadeWarm, roughness: 0.78, metalness: 0.04 });
+    this.facadeCreamMat = new THREE.MeshStandardMaterial({ map: this.textures.shopFacadeCream, roughness: 0.78, metalness: 0.04 });
+    this.facadeTealMat = new THREE.MeshStandardMaterial({ map: this.textures.shopFacadeTeal, roughness: 0.78, metalness: 0.04 });
+    this.facadeApartmentMat = new THREE.MeshStandardMaterial({ map: this.textures.apartmentFacade, roughness: 0.8, metalness: 0.04 });
+    this.facadeHospitalMat = new THREE.MeshStandardMaterial({ map: this.textures.hospitalFacade, roughness: 0.68, metalness: 0.08 });
+    this.facadeOfficeMat = new THREE.MeshStandardMaterial({ map: this.textures.officeCurtainFacade, roughness: 0.35, metalness: 0.25 });
+
+    this.stuccoCreamMat = new THREE.MeshStandardMaterial({ color: 0xf5ebd8, roughness: 0.8 });
+    this.stuccoWarmMat = new THREE.MeshStandardMaterial({ color: 0xebd4ba, roughness: 0.82 });
+    this.stuccoMintMat = new THREE.MeshStandardMaterial({ color: 0xdbe7e0, roughness: 0.82 });
+    this.stuccoOchreMat = new THREE.MeshStandardMaterial({ color: 0xd9a86c, roughness: 0.82 });
+    this.stuccoSlateMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.78 });
+
+    this.concretePillarMat = new THREE.MeshStandardMaterial({ color: 0xd6d3d1, roughness: 0.84 });
+    this.shutterSteelMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.52, metalness: 0.55 });
+    this.darkIronMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.42, metalness: 0.75 });
+    this.parapetMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.85 });
+    this.teakWoodMat = new THREE.MeshStandardMaterial({ color: 0x5c3317, roughness: 0.68 });
+    this.waterTankMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.55 });
+    this.curtainGlassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      roughness: 0.14,
+      metalness: 0.28,
+      clearcoat: 0.9,
+    });
+    this.foliageShrubMat = new THREE.MeshStandardMaterial({ color: 0x2f7a32, roughness: 0.76, side: THREE.DoubleSide });
+    this.rockLateriteMat = new THREE.MeshStandardMaterial({ color: 0x6b3a2b, roughness: 0.94 });
+    this.utilityPoleMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.78, metalness: 0.2 });
+    this.constructionOrangeMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.65 });
+    this.medicalCrossRedMat = new THREE.MeshStandardMaterial({
+      color: 0xdc2626,
+      emissive: 0x991b1b,
+      emissiveIntensity: 0.35,
+      roughness: 0.4,
+    });
+
     // Register shared materials in AssetManager for clean lifecycle disposal
     assets.registerMaterial('kzd_asphalt', this.asphaltMat);
     assets.registerMaterial('kzd_plain_asphalt', this.plainAsphaltMat);
@@ -196,6 +263,97 @@ export class MaterialLibrary {
     assets.registerMaterial('kzd_palm_frond', this.palmFrondMat);
     assets.registerMaterial('kzd_shade_trunk', this.shadeTrunkMat);
     assets.registerMaterial('kzd_shade_leaf', this.shadeLeafMat);
+    assets.registerMaterial('kzd_facade_warm', this.facadeWarmMat);
+    assets.registerMaterial('kzd_facade_cream', this.facadeCreamMat);
+    assets.registerMaterial('kzd_facade_teal', this.facadeTealMat);
+    assets.registerMaterial('kzd_facade_apartment', this.facadeApartmentMat);
+    assets.registerMaterial('kzd_facade_hospital', this.facadeHospitalMat);
+    assets.registerMaterial('kzd_facade_office', this.facadeOfficeMat);
+    assets.registerMaterial('kzd_stucco_cream', this.stuccoCreamMat);
+    assets.registerMaterial('kzd_stucco_warm', this.stuccoWarmMat);
+    assets.registerMaterial('kzd_stucco_mint', this.stuccoMintMat);
+    assets.registerMaterial('kzd_stucco_ochre', this.stuccoOchreMat);
+    assets.registerMaterial('kzd_stucco_slate', this.stuccoSlateMat);
+    assets.registerMaterial('kzd_pillar_concrete', this.concretePillarMat);
+    assets.registerMaterial('kzd_shutter_steel', this.shutterSteelMat);
+    assets.registerMaterial('kzd_dark_iron', this.darkIronMat);
+    assets.registerMaterial('kzd_parapet', this.parapetMat);
+    assets.registerMaterial('kzd_teak_wood', this.teakWoodMat);
+    assets.registerMaterial('kzd_water_tank', this.waterTankMat);
+    assets.registerMaterial('kzd_curtain_glass', this.curtainGlassMat);
+    assets.registerMaterial('kzd_foliage_shrub', this.foliageShrubMat);
+    assets.registerMaterial('kzd_rock_laterite', this.rockLateriteMat);
+    assets.registerMaterial('kzd_utility_pole', this.utilityPoleMat);
+    assets.registerMaterial('kzd_construction_orange', this.constructionOrangeMat);
+    assets.registerMaterial('kzd_medical_cross', this.medicalCrossRedMat);
+  }
+
+  private readonly assetsRef: AssetManager;
+
+  getAwningMaterial(colorHex: number): THREE.MeshStandardMaterial {
+    let mat = this.awningMaterialCache.get(colorHex);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.72,
+        side: THREE.DoubleSide,
+      });
+      this.awningMaterialCache.set(colorHex, mat);
+      this.assetsRef.registerMaterial(`kzd_awning_${colorHex.toString(16)}`, mat);
+    }
+    return mat;
+  }
+
+  getSignMaterial(
+    key: string,
+    malayalam: string,
+    english: string,
+    bg: string,
+    fg: string,
+  ): THREE.MeshStandardMaterial {
+    const cacheKey = `${key}_${bg}_${fg}`;
+    let mat = this.signMaterialCache.get(cacheKey);
+    if (!mat) {
+      const tex = this.textures.createSignTexture(key, malayalam, english, bg, fg);
+      mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        emissive: 0xffffff,
+        emissiveMap: tex,
+        emissiveIntensity: 0.3,
+        roughness: 0.36,
+      });
+      this.signMaterialCache.set(cacheKey, mat);
+      this.assetsRef.registerMaterial(`kzd_sign_mat_${cacheKey}`, mat);
+    }
+    return mat;
+  }
+
+  getRoadSignMaterial(
+    key: string,
+    routeBadge: string,
+    destinationsEn: string[],
+    destinationsMl: string,
+    bgHex: string,
+  ): THREE.MeshStandardMaterial {
+    const cacheKey = `road_${key}`;
+    let mat = this.signMaterialCache.get(cacheKey);
+    if (!mat) {
+      const tex = this.textures.createRoadSignTexture(
+        key,
+        routeBadge,
+        destinationsEn,
+        destinationsMl,
+        bgHex,
+      );
+      mat = new THREE.MeshStandardMaterial({
+        map: tex,
+        roughness: 0.38,
+        metalness: 0.12,
+      });
+      this.signMaterialCache.set(cacheKey, mat);
+      this.assetsRef.registerMaterial(`kzd_road_sign_${key}`, mat);
+    }
+    return mat;
   }
 
   update(dt: number, nightGlowFactor: number, waterDetailHigh: boolean): void {
