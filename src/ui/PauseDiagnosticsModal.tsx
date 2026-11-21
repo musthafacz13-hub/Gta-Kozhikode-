@@ -525,7 +525,7 @@ export function PauseDiagnosticsModal({
               Back
             </button>
           ) : (
-            <span className="text-xs text-slate-500">GTA Kozhikode</span>
+            <span className="text-xs text-slate-500">Kozhikode Life</span>
           )}
 
           <button

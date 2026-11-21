@@ -349,6 +349,8 @@ const sharedMaterials = {
   riderShirtMat: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 }),
   riderSkinMat: new THREE.MeshStandardMaterial({ color: 0x8d5524, roughness: 0.72 }),
   helmetMat: new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.3 }),
+  deliveryOrangeMat: new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.45, metalness: 0.08 }),
+  deliveryAmberTrimMat: new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.32, metalness: 0.15 }),
 };
 
 const bodyPaintCache = new Map<number, THREE.MeshPhysicalMaterial>();
@@ -465,6 +467,7 @@ function wrapWithLod(
     colorHex?: number;
     frontWheels?: THREE.Object3D[];
     npcDriverGroup?: THREE.Group | null;
+    deliveryBoxGroup?: THREE.Group | null;
   },
 ): THREE.LOD {
   const lod = new THREE.LOD();
@@ -480,6 +483,7 @@ function wrapWithLod(
   lod.userData.modelId = metaExtras?.modelId;
   lod.userData.colorHex = metaExtras?.colorHex ?? proxyColor;
   lod.userData.npcDriverGroup = metaExtras?.npcDriverGroup ?? null;
+  lod.userData.deliveryBoxGroup = metaExtras?.deliveryBoxGroup ?? null;
   return lod;
 }
 
@@ -748,11 +752,25 @@ function buildTwoWheeler(
     if (withDriver) npcDriverGroup = addSeatedRider(bike, 0.83, -0.24, isYamaha ? 0.28 : 0.14);
   }
 
+  // Composite Rear Pillion Thermal Delivery Box (visible when delivery carrier is active)
+  const deliveryBoxGroup = new THREE.Group();
+  const isScooter = modelId === 'suzuki_access_125' || modelId === 'honda_activa';
+  const rackBaseY = isScooter ? 0.83 : modelId === 'yamaha_fz' ? 0.94 : 0.84;
+  addPart(deliveryBoxGroup, sharedMaterials.blackTrimMat, 0.38, 0.03, 0.36, 0, rackBaseY, -0.56);
+  addPart(deliveryBoxGroup, sharedMaterials.deliveryOrangeMat, 0.36, 0.31, 0.34, 0, rackBaseY + 0.17, -0.56);
+  addPart(deliveryBoxGroup, sharedMaterials.blackTrimMat, 0.38, 0.045, 0.36, 0, rackBaseY + 0.34, -0.56);
+  addPart(deliveryBoxGroup, sharedMaterials.deliveryAmberTrimMat, 0.3, 0.05, 0.02, 0, rackBaseY + 0.18, -0.735, 0, 0, 0, false);
+  addPart(deliveryBoxGroup, sharedMaterials.deliveryAmberTrimMat, 0.015, 0.05, 0.26, -0.185, rackBaseY + 0.18, -0.56, 0, 0, 0, false);
+  addPart(deliveryBoxGroup, sharedMaterials.deliveryAmberTrimMat, 0.015, 0.05, 0.26, 0.185, rackBaseY + 0.18, -0.56, 0, 0, 0, false);
+  deliveryBoxGroup.visible = false;
+  bike.add(deliveryBoxGroup);
+
   return wrapWithLod(bike, [meta.width, meta.height, meta.length], colorHex, lodDist, wheels, {
     modelId,
     colorHex,
     frontWheels: wheels.slice(0, 1),
     npcDriverGroup,
+    deliveryBoxGroup,
   });
 }
 

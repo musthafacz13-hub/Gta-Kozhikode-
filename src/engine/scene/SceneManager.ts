@@ -182,11 +182,15 @@ export class SceneManager {
     return this.atmosphere.getWeatherLabel();
   }
 
+  getCurrentClockHour(): number {
+    return this.atmosphere.getState().hours;
+  }
+
   getNearbyPedestrianForTalk(
     x: number,
     z: number,
     maxDistanceMeters = 2.6,
-  ): { id: string; label: string; distanceMeters: number } | null {
+  ): { id: string; label: string; variant: string; distanceMeters: number } | null {
     const peds = this.pedestrianSystem.getPedestrians();
     let bestDist = maxDistanceMeters;
     let bestId: string | null = null;
@@ -203,16 +207,19 @@ export class SceneManager {
     if (!bestId) return null;
     const labels: Record<string, string> = {
       man: 'Kozhikode Local',
+      young_adult: 'Kozhikode Youth',
       elderly: 'Mooppan / Elder',
       student: 'College Student',
       woman: 'Local Pedestrian',
       worker: 'Harbour Worker',
+      shop_customer: 'SM Street Shopper',
       shopkeeper: 'Shopkeeper',
       vendor: 'Street Vendor',
     };
     return {
       id: bestId,
       label: labels[bestVariant] ?? 'Local Resident',
+      variant: bestVariant,
       distanceMeters: Number(bestDist.toFixed(1)),
     };
   }
@@ -307,6 +314,17 @@ export class SceneManager {
 
   setDestinationBeacon(target: { x: number; z: number } | null): void {
     this.worldStreamer.setDestinationBeacon(target);
+  }
+
+  setDeliveryMarkers(
+    pickup: { x: number; z: number } | null,
+    dropoff: { x: number; z: number } | null,
+  ): void {
+    this.worldStreamer.setDeliveryMarkers(pickup, dropoff);
+  }
+
+  setArjunDeliveryBagVisible(visible: boolean): void {
+    this.arjunRig.setDeliveryBagVisible(visible);
   }
 
   applyGraphicsTier(tier: GraphicsTier, isSoftwareGl: boolean): void {

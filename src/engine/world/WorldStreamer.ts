@@ -149,6 +149,8 @@ export class WorldStreamer {
   private originOffset = { x: 0, z: 0 };
   private beaconMesh: THREE.Mesh | null = null;
   private destinationBeaconGroup: THREE.Group | null = null;
+  private pickupBeaconGroup: THREE.Group | null = null;
+  private dropoffBeaconGroup: THREE.Group | null = null;
   private readonly floatingBoats: { mesh: THREE.Object3D; baseY: number; phase: number }[] = [];
   private simTimeSec = 0;
 
@@ -286,6 +288,68 @@ export class WorldStreamer {
     const gy = getGroundHeightAt(target.x, target.z);
     this.destinationBeaconGroup.position.set(target.x, gy, target.z);
     this.destinationBeaconGroup.visible = true;
+  }
+
+  setDeliveryMarkers(
+    pickup: { x: number; z: number } | null,
+    dropoff: { x: number; z: number } | null,
+  ): void {
+    const ensureMarker = (
+      existing: THREE.Group | null,
+      ringColor: number,
+      beamColor: number,
+    ): THREE.Group => {
+      if (existing) return existing;
+      const g = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.5, 2.25, 28),
+        new THREE.MeshBasicMaterial({
+          color: ringColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.9,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.22;
+
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.9, 48, 12, 1, true),
+        new THREE.MeshBasicMaterial({
+          color: beamColor,
+          transparent: true,
+          opacity: 0.34,
+          depthWrite: false,
+        }),
+      );
+      beam.position.y = 24;
+
+      const diamond = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.65, 0),
+        new THREE.MeshBasicMaterial({ color: ringColor }),
+      );
+      diamond.position.y = 3.2;
+
+      g.add(ring, beam, diamond);
+      this.root.add(g);
+      return g;
+    };
+
+    if (pickup) {
+      this.pickupBeaconGroup = ensureMarker(this.pickupBeaconGroup, 0xf59e0b, 0xfbbf24);
+      this.pickupBeaconGroup.position.set(pickup.x, getGroundHeightAt(pickup.x, pickup.z), pickup.z);
+      this.pickupBeaconGroup.visible = true;
+    } else if (this.pickupBeaconGroup) {
+      this.pickupBeaconGroup.visible = false;
+    }
+
+    if (dropoff) {
+      this.dropoffBeaconGroup = ensureMarker(this.dropoffBeaconGroup, 0x10b981, 0x34d399);
+      this.dropoffBeaconGroup.position.set(dropoff.x, getGroundHeightAt(dropoff.x, dropoff.z), dropoff.z);
+      this.dropoffBeaconGroup.visible = true;
+    } else if (this.dropoffBeaconGroup) {
+      this.dropoffBeaconGroup.visible = false;
+    }
   }
 
   getActiveColliders(): StaticAabbCollider[] {
@@ -481,6 +545,12 @@ export class WorldStreamer {
     }
     if (this.destinationBeaconGroup && this.destinationBeaconGroup.visible) {
       this.destinationBeaconGroup.rotation.y += dt * 1.1;
+    }
+    if (this.pickupBeaconGroup && this.pickupBeaconGroup.visible) {
+      this.pickupBeaconGroup.rotation.y += dt * 1.4;
+    }
+    if (this.dropoffBeaconGroup && this.dropoffBeaconGroup.visible) {
+      this.dropoffBeaconGroup.rotation.y -= dt * 1.4;
     }
     const nowSec = performance.now() * 0.001;
     for (let i = 0; i < this.floatingBoats.length; i++) {

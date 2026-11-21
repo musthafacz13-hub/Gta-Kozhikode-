@@ -270,8 +270,16 @@ export class AudioManager {
   }
 
   playGameEvent(event: GameSfxEvent): void {
-    if (event === 'mission_start' || event === 'mission_complete' || event === 'notification') {
-      this.duckMusic(0.38, 1600);
+    if (
+      event === 'mission_start' ||
+      event === 'mission_complete' ||
+      event === 'notification' ||
+      event === 'order_accept' ||
+      event === 'food_pickup' ||
+      event === 'delivery_complete' ||
+      event === 'reward_chime'
+    ) {
+      this.duckMusic(0.42, 1400);
     }
     this.soundscapes?.playGameSfx(event);
   }

@@ -1,6 +1,8 @@
 import type { NearbyBuildingSummary } from '../types.ts';
 
 export type InteractionActionKind =
+  | 'collect_order'
+  | 'deliver_order'
   | 'enter_house'
   | 'open_door'
   | 'talk'
@@ -23,6 +25,7 @@ export interface ContextualInteractionTarget {
 export interface NearbyNpcCandidate {
   id: string;
   label: string;
+  variant?: string;
   distanceMeters: number;
 }
 
@@ -34,12 +37,30 @@ export interface NearbyVehicleCandidate {
   reason?: string;
 }
 
+export interface NearbyDeliveryPickupCandidate {
+  orderId: string;
+  restaurantName: string;
+  malayalamName?: string;
+  distanceMeters: number;
+  isReady: boolean;
+  prepRemainingSec?: number;
+}
+
+export interface NearbyDeliveryDropoffCandidate {
+  orderId: string;
+  placeLabel: string;
+  customerName: string;
+  distanceMeters: number;
+}
+
 export interface ResolveInteractionInput {
   nearbyBuilding: NearbyBuildingSummary | null;
   nearHome: boolean;
   homeDistanceMeters: number;
   nearbyNpc?: NearbyNpcCandidate | null;
   nearbyVehicle?: NearbyVehicleCandidate | null;
+  nearbyDeliveryPickup?: NearbyDeliveryPickupCandidate | null;
+  nearbyDeliveryDropoff?: NearbyDeliveryDropoffCandidate | null;
   isDriving?: boolean;
 }
 
@@ -57,11 +78,34 @@ export function resolveContextualInteraction(
     homeDistanceMeters,
     nearbyNpc,
     nearbyVehicle,
+    nearbyDeliveryPickup,
+    nearbyDeliveryDropoff,
     isDriving,
   } = input;
 
   if (isDriving) {
     return null;
+  }
+
+  if (nearbyDeliveryDropoff) {
+    return {
+      id: nearbyDeliveryDropoff.orderId,
+      kind: 'deliver_order',
+      actionLabel: 'Deliver Order',
+      targetName: `${nearbyDeliveryDropoff.customerName} · ${nearbyDeliveryDropoff.placeLabel}`,
+      distanceMeters: nearbyDeliveryDropoff.distanceMeters,
+    };
+  }
+
+  if (nearbyDeliveryPickup && nearbyDeliveryPickup.isReady) {
+    return {
+      id: nearbyDeliveryPickup.orderId,
+      kind: 'collect_order',
+      actionLabel: 'Collect Order',
+      targetName: nearbyDeliveryPickup.restaurantName,
+      malayalamName: nearbyDeliveryPickup.malayalamName,
+      distanceMeters: nearbyDeliveryPickup.distanceMeters,
+    };
   }
 
   if (

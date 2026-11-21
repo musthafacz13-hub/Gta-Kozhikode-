@@ -532,6 +532,23 @@ export class MalabarSoundscapes {
     } else if (event === 'notification') {
       this.playToneSweep(587.33, 587.33, 0.11, 'sine', 0.08, now);
       this.playToneSweep(880.0, 880.0, 0.16, 'sine', 0.07, now + 0.08);
+    } else if (event === 'order_accept') {
+      this.playToneSweep(523.25, 523.25, 0.12, 'sine', 0.085, now);
+      this.playToneSweep(659.25, 659.25, 0.14, 'sine', 0.085, now + 0.09);
+      this.playToneSweep(783.99, 783.99, 0.2, 'triangle', 0.09, now + 0.18);
+    } else if (event === 'food_pickup') {
+      this.playToneSweep(440.0, 587.33, 0.14, 'triangle', 0.085, now);
+      this.playToneSweep(880.0, 880.0, 0.18, 'sine', 0.075, now + 0.11);
+    } else if (event === 'delivery_complete') {
+      this.playToneSweep(523.25, 523.25, 0.15, 'triangle', 0.09, now);
+      this.playToneSweep(659.25, 659.25, 0.15, 'triangle', 0.09, now + 0.1);
+      this.playToneSweep(783.99, 783.99, 0.18, 'triangle', 0.095, now + 0.2);
+      this.playToneSweep(1046.5, 1046.5, 0.36, 'sine', 0.09, now + 0.3);
+    } else if (event === 'reward_chime') {
+      this.playToneSweep(659.25, 659.25, 0.12, 'sine', 0.08, now);
+      this.playToneSweep(987.77, 987.77, 0.24, 'sine', 0.085, now + 0.09);
+    } else if (event === 'npc_greet') {
+      this.playToneSweep(493.88, 587.33, 0.11, 'sine', 0.065, now);
     } else if (event === 'mission_start') {
       this.playToneSweep(220, 440, 0.35, 'triangle', 0.12, now);
       this.playToneSweep(659.25, 659.25, 0.4, 'sine', 0.09, now + 0.14);

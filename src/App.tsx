@@ -1,9 +1,11 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createDefaultProgressionState } from './engine/delivery/LifestyleProgression.ts';
 import { GameEngine } from './engine/GameEngine.ts';
 import { createDefaultSettings } from './engine/persistence/IndexedDBStorage.ts';
 import type { EngineHudSnapshot, GameSettings } from './engine/types.ts';
 import { KOZHIKODE_GAZETTEER_PLACES } from './engine/world/KozhikodeGazetteer.ts';
 import { KOZHIKODE_REGIONS } from './engine/world/KozhikodeGeography.ts';
+import { DeliveryAndLifeModal } from './ui/DeliveryAndLifeModal.tsx';
 import { HudOverlay } from './ui/HudOverlay.tsx';
 import { PauseDiagnosticsModal } from './ui/PauseDiagnosticsModal.tsx';
 import { TitleScreen } from './ui/TitleScreen.tsx';
@@ -61,6 +63,19 @@ const INITIAL_SNAPSHOT: EngineHudSnapshot = {
   nearbyBuilding: null,
   activeDestination: null,
   vehicle: null,
+  delivery: {
+    activeOrder: null,
+    availableOrders: [],
+    currentHour: 17.6,
+    nearbyRestaurant: null,
+    nearbyPickupReady: false,
+    pickupDistanceMeters: null,
+    dropoffDistanceMeters: null,
+    canCollectNearby: false,
+    canDeliverNearby: false,
+    lastFeedback: null,
+  },
+  progression: createDefaultProgressionState(),
   audio: {
     unlocked: false,
     suspended: false,
@@ -105,6 +120,7 @@ function GameShell() {
   const requestedModalTabRef = useRef<'pause' | 'settings' | 'controls' | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showWorldMap, setShowWorldMap] = useState(false);
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -116,6 +132,7 @@ function GameShell() {
     const engine = new GameEngine();
     engineRef.current = engine;
     engine.setMapToggleHandler(() => {
+      setShowDeliveryModal(false);
       setShowWorldMap((prev) => !prev);
     });
     const unsubscribe = engine.subscribeHud((next) => {
@@ -149,8 +166,8 @@ function GameShell() {
   }, []);
 
   useEffect(() => {
-    engineRef.current?.setExternalModalOpen(showWorldMap);
-  }, [showWorldMap]);
+    engineRef.current?.setExternalModalOpen(showWorldMap || showDeliveryModal);
+  }, [showWorldMap, showDeliveryModal]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -162,11 +179,22 @@ function GameShell() {
       if (e.code === 'KeyM' && (snapshot.mode === 'playing' || snapshot.mode === 'paused')) {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         e.preventDefault();
+        setShowDeliveryModal(false);
         setShowWorldMap((prev) => !prev);
         return;
       }
+      if (e.code === 'KeyJ' && (snapshot.mode === 'playing' || snapshot.mode === 'paused')) {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        e.preventDefault();
+        setShowWorldMap(false);
+        setShowDeliveryModal((prev) => !prev);
+        return;
+      }
       if (e.code === 'Escape') {
-        if (showWorldMap) {
+        if (showDeliveryModal) {
+          e.preventDefault();
+          setShowDeliveryModal(false);
+        } else if (showWorldMap) {
           e.preventDefault();
           setShowWorldMap(false);
         } else if (snapshot.mode === 'paused') {
@@ -177,7 +205,7 @@ function GameShell() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [snapshot.mode, showModal, showWorldMap]);
+  }, [snapshot.mode, showModal, showWorldMap, showDeliveryModal]);
 
   const handleManualSave = async () => {
     const saved = await engineRef.current?.saveCheckpoint('slot_manual_1');
@@ -218,7 +246,7 @@ function GameShell() {
         />
       )}
 
-      {(snapshot.mode === 'playing' || snapshot.mode === 'paused') && !showWorldMap && (
+      {(snapshot.mode === 'playing' || snapshot.mode === 'paused') && !showWorldMap && !showDeliveryModal && (
         <HudOverlay
           snapshot={snapshot}
           onPause={() => {
@@ -246,6 +274,9 @@ function GameShell() {
           onVehicleControls={(patch) => engineRef.current?.input.setVehicleVirtualControls(patch)}
           onVehicleHorn={() => engineRef.current?.triggerVehicleHorn()}
           onOpenWorldMap={() => setShowWorldMap(true)}
+          onOpenDeliveryBoard={() => setShowDeliveryModal(true)}
+          onPickupOrder={() => engineRef.current?.pickupNearbyOrder()}
+          onDeliverOrder={() => engineRef.current?.deliverNearbyOrder()}
           onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
           onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
           onVirtualMove={(x, y) => engineRef.current?.input.setVirtualAxes(x, y)}
@@ -254,6 +285,36 @@ function GameShell() {
             engineRef.current?.input.triggerAction('jump', true);
             engineRef.current?.input.triggerAction('jump', false);
           }}
+        />
+      )}
+
+      {showDeliveryModal && (
+        <DeliveryAndLifeModal
+          snapshot={snapshot}
+          onClose={() => setShowDeliveryModal(false)}
+          onRefreshOrders={() => engineRef.current?.refreshDeliveryOrders()}
+          onAcceptOrder={(id) =>
+            engineRef.current?.acceptDeliveryOrder(id) ?? { ok: false, reason: 'Unavailable' }
+          }
+          onPickupOrder={() =>
+            engineRef.current?.pickupNearbyOrder() ?? { ok: false, reason: 'Unavailable' }
+          }
+          onDeliverOrder={() =>
+            engineRef.current?.deliverNearbyOrder() ?? { ok: false, reason: 'Unavailable' }
+          }
+          onCancelOrder={() => engineRef.current?.cancelActiveOrder()}
+          onNavigateRestaurant={(id) => engineRef.current?.navigateToRestaurant(id)}
+          onPurchaseUpgrade={(id) =>
+            engineRef.current?.purchaseLifestyleUpgrade(id) ?? { ok: false, reason: 'Unavailable' }
+          }
+          onPurchaseVehicle={(id) =>
+            engineRef.current?.purchaseOwnedVehicle(id) ?? { ok: false, reason: 'Unavailable' }
+          }
+          onSummonVehicle={(id) =>
+            engineRef.current?.summonOwnedVehicle(id) ?? { ok: false, reason: 'Unavailable' }
+          }
+          onToggleDeliveryBag={(eq) => engineRef.current?.toggleDeliveryBag(eq)}
+          onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
         />
       )}
 
@@ -267,11 +328,12 @@ function GameShell() {
           }}
           onSetDestination={(dest) => engineRef.current?.setDestinationWaypoint(dest)}
           onClearDestination={() => engineRef.current?.clearDestinationWaypoint()}
+          onOpenDeliveryBoard={() => setShowDeliveryModal(true)}
           onUiClick={() => engineRef.current?.audio.playUiSound('ui_click')}
         />
       )}
 
-      {showModal && !showWorldMap && (
+      {showModal && !showWorldMap && !showDeliveryModal && (
         <PauseDiagnosticsModal
           snapshot={snapshot}
           logs={engineRef.current?.getLogs() ?? []}

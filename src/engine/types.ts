@@ -108,6 +108,165 @@ export interface ActiveVehicleHudState {
   groundSurface: VehicleGroundSurface;
 }
 
+export type RestaurantCategory =
+  | 'biryani_shop'
+  | 'malabar_restaurant'
+  | 'tea_shop'
+  | 'bakery'
+  | 'fast_food';
+
+export type KozhikodeDeliveryAreaId =
+  | 'sm_street'
+  | 'mananchira'
+  | 'mavoor_road'
+  | 'palayam'
+  | 'railway_station'
+  | 'west_hill'
+  | 'nadakkavu'
+  | 'kozhikode_beach'
+  | 'medical_college'
+  | 'beypore';
+
+export interface RestaurantMenuItem {
+  id: string;
+  name: string;
+  malayalamName: string;
+  priceInr: number;
+  prepSec: number;
+}
+
+export interface RestaurantSpec {
+  id: string;
+  buildingId: string;
+  areaId: KozhikodeDeliveryAreaId;
+  areaLabel: string;
+  name: string;
+  malayalamName: string;
+  category: RestaurantCategory;
+  worldX: number;
+  worldZ: number;
+  pickupX: number;
+  pickupZ: number;
+  openHour: number;
+  closeHour: number;
+  prepTimeSec: number;
+  rating: number;
+  ambientTag: string;
+  menuItems: RestaurantMenuItem[];
+}
+
+export interface CustomerLocationSpec {
+  id: string;
+  buildingId: string;
+  areaId: KozhikodeDeliveryAreaId;
+  areaLabel: string;
+  customerName: string;
+  placeLabel: string;
+  malayalamLabel: string;
+  propertyType: 'home' | 'villa' | 'apartment' | 'shop' | 'campus' | 'beach';
+  worldX: number;
+  worldZ: number;
+  dropoffX: number;
+  dropoffZ: number;
+  greetingLine: string;
+}
+
+export type DeliveryOrderStatus =
+  | 'available'
+  | 'accepted'
+  | 'preparing'
+  | 'ready_for_pickup'
+  | 'picked_up'
+  | 'in_transit'
+  | 'delivered'
+  | 'cancelled';
+
+export interface DeliveryPackageState {
+  hasPackage: boolean;
+  bagEquipped: boolean;
+  foodCondition: number; // 0..100
+  temperaturePct: number; // 0..100
+  fragile: boolean;
+}
+
+export interface DeliveryOrder {
+  orderId: string;
+  restaurantId: string;
+  restaurantName: string;
+  restaurantMalayalamName: string;
+  restaurantCategory: RestaurantCategory;
+  restaurantAreaLabel: string;
+  pickupX: number;
+  pickupZ: number;
+  customerId: string;
+  customerName: string;
+  customerPlaceLabel: string;
+  customerAreaLabel: string;
+  customerGreeting: string;
+  dropoffX: number;
+  dropoffZ: number;
+  itemsSummary: string;
+  itemsCount: number;
+  prepTimeSec: number;
+  prepRemainingSec: number;
+  routeDistanceMeters: number;
+  routeRealKm: number;
+  estimatedMinutes: number;
+  basePayInr: number;
+  distanceBonusInr: number;
+  tipInr: number;
+  totalEstimateInr: number;
+  status: DeliveryOrderStatus;
+  acceptedAt: number | null;
+  pickedUpAt: number | null;
+  deliveredAt: number | null;
+  packageState: DeliveryPackageState;
+}
+
+export interface CompletedDeliveryRecord {
+  orderId: string;
+  restaurantId: string;
+  restaurantName: string;
+  customerName: string;
+  customerPlaceLabel: string;
+  earnedInr: number;
+  tipEarnedInr: number;
+  foodCondition: number;
+  customerMood: 'happy' | 'thankful' | 'friendly';
+  customerReview: string;
+  completedAt: number;
+}
+
+export type LifestyleUpgradeId =
+  | 'thermal_bag_pro'
+  | 'scooter_tune'
+  | 'malabar_uniform'
+  | 'coastal_tourer_upgrade'
+  | 'tharavadu_comfort';
+
+export type ReputationTier =
+  | 'Newcomer'
+  | 'Neighbourhood Rider'
+  | 'City Regular'
+  | 'Malabar Trusted Courier'
+  | 'Kozhikode Legend';
+
+export interface PlayerProgressionState {
+  schemaVersion: number;
+  walletBalanceInr: number;
+  totalEarnedInr: number;
+  completedDeliveries: number;
+  reputationScore: number;
+  reputationTier: ReputationTier;
+  bagEquipped: boolean;
+  discoveredRestaurants: string[];
+  discoveredDistricts: string[];
+  ownedVehicleModels: VehicleModelId[];
+  unlockedUpgrades: LifestyleUpgradeId[];
+  deliveryHistory: CompletedDeliveryRecord[];
+  updatedAt: number;
+}
+
 export interface SaveSlotMeta {
   slotId: string;
   slotType: SaveSlotType;
@@ -118,6 +277,8 @@ export interface SaveSlotMeta {
   savedAt: number;
   cameraPreset: string;
   vehicleState?: SavedVehiclesState;
+  progressionState?: PlayerProgressionState;
+  activeOrder?: DeliveryOrder | null;
 }
 
 export interface RenderCapabilitiesReport {
@@ -189,7 +350,20 @@ export interface ActiveDestinationState {
   estimatedDriveMinutes: number;
   viaSummary: string[];
   routeWaypoints: RoadRouteWaypoint[];
-  source: 'gazetteer' | 'google_places';
+  source: 'gazetteer' | 'google_places' | 'delivery';
+}
+
+export interface DeliveryHudSnapshot {
+  activeOrder: DeliveryOrder | null;
+  availableOrders: DeliveryOrder[];
+  currentHour: number;
+  nearbyRestaurant: RestaurantSpec | null;
+  nearbyPickupReady: boolean;
+  pickupDistanceMeters: number | null;
+  dropoffDistanceMeters: number | null;
+  canCollectNearby: boolean;
+  canDeliverNearby: boolean;
+  lastFeedback: CompletedDeliveryRecord | null;
 }
 
 export interface EngineHudSnapshot {
@@ -224,6 +398,8 @@ export interface EngineHudSnapshot {
   nearbyBuilding?: NearbyBuildingSummary | null;
   nearbyInteraction?: ContextualInteractionTarget | null;
   vehicle?: ActiveVehicleHudState | null;
+  delivery?: DeliveryHudSnapshot;
+  progression?: PlayerProgressionState;
   activeDestination: ActiveDestinationState | null;
   ambientStats?: {
     activeVehicles: number;
@@ -240,3 +416,4 @@ export interface EngineHudSnapshot {
   slots: SaveSlotMeta[];
   lastError: string | null;
 }
+

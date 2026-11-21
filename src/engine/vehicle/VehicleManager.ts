@@ -54,6 +54,7 @@ export interface WorldVehicleEntity {
   frontWheels: THREE.Object3D[];
   bodyGroup: THREE.Object3D | null;
   npcDriverGroup: THREE.Object3D | null;
+  deliveryBoxGroup: THREE.Object3D | null;
 }
 
 export interface EnterVehicleResult {
@@ -116,6 +117,7 @@ function extractVisualParts(lod: THREE.Object3D): {
   frontWheels: THREE.Object3D[];
   bodyGroup: THREE.Object3D | null;
   npcDriverGroup: THREE.Object3D | null;
+  deliveryBoxGroup: THREE.Object3D | null;
 } {
   const wheels = Array.isArray(lod.userData?.wheels)
     ? (lod.userData.wheels as THREE.Object3D[])
@@ -125,7 +127,8 @@ function extractVisualParts(lod: THREE.Object3D): {
     : wheels.slice(0, Math.min(2, wheels.length));
   const bodyGroup = (lod.userData?.bodyGroup as THREE.Object3D | undefined) ?? null;
   const npcDriverGroup = (lod.userData?.npcDriverGroup as THREE.Object3D | undefined) ?? null;
-  return { wheels, frontWheels, bodyGroup, npcDriverGroup };
+  const deliveryBoxGroup = (lod.userData?.deliveryBoxGroup as THREE.Object3D | undefined) ?? null;
+  return { wheels, frontWheels, bodyGroup, npcDriverGroup, deliveryBoxGroup };
 }
 
 function isSpotClearForPlayer(
@@ -233,6 +236,85 @@ export class VehicleManager {
 
   isEntering(): boolean {
     return this.drivingVehicleId !== null && this.transitionMode === 'entering';
+  }
+
+  setActiveDeliveryBagEquipped(equipped: boolean): void {
+    for (let i = 0; i < this.vehicles.length; i++) {
+      const v = this.vehicles[i];
+      if (v.deliveryBoxGroup) {
+        v.deliveryBoxGroup.visible = equipped && v.id === this.drivingVehicleId;
+      }
+    }
+  }
+
+  spawnOwnedVehicleNearPlayer(
+    modelId: VehicleModelId,
+    colorHex: number,
+    playerPos: { x: number; z: number; heading: number },
+    mats: MaterialLibrary,
+    colliders: StaticAabbCollider[],
+    trafficVehicles: ReadonlyArray<DynamicVehicleColliderRef>,
+    groundHeightFn: (x: number, z: number) => number,
+  ): { ok: boolean; reason: string; entity?: WorldVehicleEntity } {
+    const meta = VEHICLE_BLUEPRINT_META[modelId];
+    if (!meta) {
+      return { ok: false, reason: 'Unknown vehicle model' };
+    }
+
+    const sinH = Math.sin(playerPos.heading);
+    const cosH = Math.cos(playerPos.heading);
+    const candidates: Array<[number, number]> = [
+      [2.6, 1.5],
+      [-2.6, 1.5],
+      [0, 3.6],
+      [3.6, 0],
+      [-3.6, 0],
+      [0, -3.6],
+      [4.8, 3.8],
+      [-4.8, 3.8],
+      [5.5, -2.5],
+    ];
+
+    let spawnX: number | null = null;
+    let spawnZ: number | null = null;
+    for (let i = 0; i < candidates.length; i++) {
+      const [lx, lz] = candidates[i];
+      const wx = playerPos.x + lx * cosH + lz * sinH;
+      const wz = playerPos.z - lx * sinH + lz * cosH;
+      if (
+        isSpotClearForPlayer(wx, wz, colliders, trafficVehicles, this.vehicles) &&
+        isSpotClearForPlayer(wx + meta.width * 0.45, wz, colliders, trafficVehicles, this.vehicles) &&
+        isSpotClearForPlayer(wx - meta.width * 0.45, wz, colliders, trafficVehicles, this.vehicles)
+      ) {
+        spawnX = wx;
+        spawnZ = wz;
+        break;
+      }
+    }
+
+    if (spawnX === null || spawnZ === null) {
+      return { ok: false, reason: 'Move to an open street or courtyard to summon your vehicle' };
+    }
+
+    const spawnId = `owned_${modelId}_${Date.now()}`;
+    const lod = createVehicleModelLOD(modelId, mats, { colorHex, withDriver: false });
+    const spawnY = groundHeightFn(spawnX, spawnZ);
+    const entity = this.adoptLodAsEntity(
+      spawnId,
+      'persisted',
+      spawnId,
+      modelId,
+      colorHex,
+      lod,
+      { x: spawnX, y: spawnY, z: spawnZ, heading: playerPos.heading },
+      100,
+    );
+    this.syncEntityVisual(entity, undefined);
+    return {
+      ok: true,
+      reason: `${meta.displayName} parked nearby — walk up and press E to ride`,
+      entity,
+    };
   }
 
   findNearestEnterableVehicle(
@@ -830,7 +912,7 @@ export class VehicleManager {
     damageHealth: number,
   ): WorldVehicleEntity {
     const controller = new VehicleController(modelId, transform, damageHealth);
-    const { wheels, frontWheels, bodyGroup, npcDriverGroup } = extractVisualParts(lod);
+    const { wheels, frontWheels, bodyGroup, npcDriverGroup, deliveryBoxGroup } = extractVisualParts(lod);
     lod.position.set(transform.x, transform.y, transform.z);
     lod.rotation.y = transform.heading;
     lod.visible = true;
@@ -848,6 +930,7 @@ export class VehicleManager {
       frontWheels,
       bodyGroup,
       npcDriverGroup,
+      deliveryBoxGroup,
     };
     this.vehicles.push(entity);
     return entity;

@@ -18,6 +18,23 @@ import type { PlayerMoveResult, StaticAabbCollider } from '../src/engine/player/
 import { MaterialLibrary } from '../src/engine/rendering/MaterialLibrary.ts';
 import { SceneManager } from '../src/engine/scene/SceneManager.ts';
 import type { EngineHudSnapshot } from '../src/engine/types.ts';
+import {
+  DELIVERY_INTERACTION_RANGE_METERS,
+  DeliveryOrderSystem,
+} from '../src/engine/delivery/DeliveryOrderSystem.ts';
+import {
+  createDefaultProgressionState,
+  LIFESTYLE_UPGRADES_CATALOG,
+  LifestyleProgression,
+  PURCHASABLE_VEHICLES_CATALOG,
+} from '../src/engine/delivery/LifestyleProgression.ts';
+import {
+  ALL_DELIVERY_AREAS,
+  ALL_RESTAURANT_CATEGORIES,
+  isRestaurantOpenAtHour,
+  KOZHIKODE_RESTAURANTS,
+} from '../src/engine/delivery/RestaurantCatalog.ts';
+import { getFriendlyNpcGreeting } from '../src/engine/world/PedestrianSystem.ts';
 import { VehicleController } from '../src/engine/vehicle/VehicleController.ts';
 import { VehicleManager } from '../src/engine/vehicle/VehicleManager.ts';
 import {
@@ -35,7 +52,9 @@ import {
   type VehicleModelId,
 } from '../src/engine/world/VehicleVisualFactory.ts';
 import { WorldStreamer } from '../src/engine/world/WorldStreamer.ts';
+import { DeliveryAndLifeModal } from '../src/ui/DeliveryAndLifeModal.tsx';
 import { HudOverlay } from '../src/ui/HudOverlay.tsx';
+import { TitleScreen } from '../src/ui/TitleScreen.tsx';
 
 function withMockCanvasDocument<T>(fn: () => T): T {
   const prevDoc = globalThis.document;
@@ -50,6 +69,24 @@ function withMockCanvasDocument<T>(fn: () => T): T {
   });
   try {
     return fn();
+  } finally {
+    Object.assign(globalThis, { document: prevDoc });
+  }
+}
+
+async function withMockCanvasDocumentAsync<T>(fn: () => Promise<T>): Promise<T> {
+  const prevDoc = globalThis.document;
+  Object.assign(globalThis, {
+    document: {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => null,
+      }),
+    },
+  });
+  try {
+    return await fn();
   } finally {
     Object.assign(globalThis, { document: prevDoc });
   }
@@ -168,6 +205,7 @@ function createMockWebAudioWindow() {
       ...mkNode(),
       type: 'sine',
       frequency: mkParam(120),
+      detune: mkParam(0),
       start: () => {},
       stop: () => {
         stoppedOscillators += 1;
@@ -193,6 +231,10 @@ function createMockWebAudioWindow() {
     createStereoPanner = () => ({
       ...mkNode(),
       pan: mkParam(0),
+    });
+    createDelay = () => ({
+      ...mkNode(),
+      delayTime: mkParam(0.36),
     });
   }
 
@@ -240,8 +282,8 @@ test('VehicleController handles acceleration, brake/reverse hysteresis, handbrak
   const flatGround = () => 0.02;
   const env = { colliders: [] as StaticAabbCollider[], groundHeightFn: flatGround };
 
-  // Start on Mavoor Road (asphalt, z = 44, x = 0..100)
-  const car = new VehicleController('maruti_swift', { x: 20, y: 0.02, z: 44, heading: 0 });
+  // Start on Mavoor Rd (asphalt, z = -35, x = -68..260)
+  const car = new VehicleController('maruti_swift', { x: 20, y: 0.02, z: -35, heading: 0 });
   assert.equal(car.getState().gear, 'PARKED');
 
   // 1. Accelerate forward along +Z
@@ -253,7 +295,7 @@ test('VehicleController handles acceleration, brake/reverse hysteresis, handbrak
   assert.equal(fastState.gear, 'DRIVE');
   assert.ok(fastState.forwardSpeedMps > 6.5, 'Car should accelerate smoothly on throttle');
   assert.equal(fastState.speedKmh, Math.round(Math.abs(fastState.forwardSpeedMps) * 3.6));
-  assert.ok(fastState.z > 24 && Math.abs(fastState.wheelSpinAngle) > 0);
+  assert.ok(fastState.z > -32 && Math.abs(fastState.wheelSpinAngle) > 0);
 
   // 2. Braking hysteresis: pressing brake at speed slows forward velocity BEFORE engaging reverse
   const brakeState = car.update(
@@ -282,34 +324,40 @@ test('VehicleController handles acceleration, brake/reverse hysteresis, handbrak
   assert.ok(Math.abs(car.forwardSpeedMps) < 0.05);
 
   // 4. Steering left forward increases heading (+Y), steering left in reverse inverts yaw
-  const steerCar = new VehicleController('hyundai_i20', { x: 20, y: 0.02, z: 44, heading: 0 });
+  const steerCar = new VehicleController('hyundai_i20', { x: 20, y: 0.02, z: -35, heading: 0 });
   for (let i = 0; i < 60; i++) {
     steerCar.update(1 / 60, { throttle: 0.85, brakeReverse: 0, steer: -1, handbrake: false }, env, true);
   }
   assert.ok(steerCar.heading > 0.25, 'Left steering moving forward increases +Y heading');
   assert.ok(steerCar.steerAngleRad > 0.2, 'Front wheels turn visually left (+Y)');
 
-  const revSteerCar = new VehicleController('hyundai_i20', { x: 20, y: 0.02, z: 44, heading: 0 });
+  const revSteerCar = new VehicleController('hyundai_i20', { x: 20, y: 0.02, z: -35, heading: 0 });
   for (let i = 0; i < 90; i++) {
     revSteerCar.update(1 / 60, { throttle: 0, brakeReverse: 1, steer: -1, handbrake: false }, env, true);
   }
   assert.ok(revSteerCar.heading < -0.1, 'Left steering while reversing turns tail left (negative heading)');
 
   // 5. Sand / offroad vs asphalt top speed & two-wheeler lean angle
-  const beachBike = new VehicleController('yamaha_fz', { x: -80, y: 0.02, z: 10, heading: 0 });
+  // At z = 300 south of downtown seawall, coastline sits near x = -46 -> x = -37..-34 is open coastal sand
+  const beachBike = new VehicleController('yamaha_fz', { x: -37, y: 0.02, z: 300, heading: 0 });
   for (let i = 0; i < 120; i++) {
-    beachBike.update(1 / 60, { throttle: 1, brakeReverse: 0, steer: -1, handbrake: false }, env, true);
+    beachBike.update(1 / 60, { throttle: 1, brakeReverse: 0, steer: 0, handbrake: false }, env, true);
   }
-  const bikeState = beachBike.getState();
-  assert.equal(bikeState.surface, 'sand');
-  assert.ok(Math.abs(bikeState.leanAngleRad) > 0.08, 'Two-wheeler leans dynamically during turn');
+  const sandState = beachBike.getState();
+  assert.equal(sandState.surface, 'sand');
   assert.ok(
-    bikeState.forwardSpeedMps < beachBike.profile.maxForwardSpeedMps * 0.72,
+    sandState.forwardSpeedMps < beachBike.profile.maxForwardSpeedMps * 0.72,
     'Beach sand must clamp two-wheeler speed below asphalt top speed',
   );
 
+  const cornerBike = new VehicleController('yamaha_fz', { x: 20, y: 0.02, z: -35, heading: 0 });
+  for (let i = 0; i < 120; i++) {
+    cornerBike.update(1 / 60, { throttle: 1, brakeReverse: 0, steer: -1, handbrake: false }, env, true);
+  }
+  assert.ok(Math.abs(cornerBike.leanAngleRad) > 0.08, 'Two-wheeler leans dynamically during turn');
+
   // 6. Natural coasting drag decelerates unthrottled vehicle
-  const coastSpeedBefore = bikeState.forwardSpeedMps;
+  const coastSpeedBefore = sandState.forwardSpeedMps;
   for (let i = 0; i < 120; i++) {
     beachBike.update(1 / 60, { throttle: 0, brakeReverse: 0, steer: 0, handbrake: false }, env, true);
   }
@@ -498,7 +546,7 @@ test('VehicleManager enters parked & slow NPC traffic vehicles without duplicati
 
     // Before speeding up, check speed eligibility rule via internal descriptor test or traffic advance
     for (let i = 0; i < 60; i++) {
-      traffic.update(1 / 30, npcTarget.x, npcTarget.z, undefined, []);
+      traffic.update(1 / 30, npcTarget.x, npcTarget.z, undefined, [], []);
     }
     const updatedDesc = traffic.getPhase7VehicleDescriptors().find((d) => d.id === npcTarget.id)!;
     const npcCand = vm.findNearestEnterableVehicle(updatedDesc.x, updatedDesc.z, streamer, traffic);
@@ -541,19 +589,18 @@ test('VehicleManager enters parked & slow NPC traffic vehicles without duplicati
       y: 0,
       visualY: 0,
       z: 0,
-      heading: 0,
       vx: 0,
       vz: 0,
-      vy: 0,
-      speed: 0,
+      verticalVelocity: 0,
+      isGrounded: true,
+      heading: 0,
+      turnRate: 0,
+      groundSlope: 0,
       isMoving: false,
       isSprinting: false,
-      isGrounded: true,
-      justJumped: false,
-      justLanded: false,
-      landingSpeed: 0,
-      gait: 'idle',
-      groundHeight: 0,
+      speed: 0,
+      movementGait: 'idle',
+      accelerationState: 'idle',
     };
     // Simulate open scooter visual directly via SceneManager helper
     const sceneMgr = new SceneManager(assets, false, 'medium');
@@ -578,13 +625,15 @@ test('VehicleManager enters parked & slow NPC traffic vehicles without duplicati
       dummyPlayerMove,
       1 / 60,
     );
-    assert.equal(sceneMgr.getArjunAnimationSnapshot().state, 'idle');
-    animator.update(
-      arjun,
-      dummyPlayerMove,
-      1 / 60,
-      { category: 'motorcycle', steerNorm: 0.6, leanAngleRad: 0.2, speedMps: 12, leanForwardRad: 0.28 },
-    );
+    assert.equal(sceneMgr.getArjunAnimationSnapshot().activeState, 'driving');
+    for (let f = 0; f < 15; f++) {
+      animator.update(
+        arjun,
+        dummyPlayerMove,
+        1 / 60,
+        { category: 'motorcycle', steerNorm: 0.6, leanAngleRad: 0.2, speedMps: 12, leanForwardRad: 0.28 },
+      );
+    }
     assert.ok(arjun.hipR.rotation.x < -0.5, 'Seated rider bends hips/knees naturally over motorcycle/scooter');
 
     // Enclosed vehicle hides player character mesh cleanly
@@ -635,8 +684,8 @@ test('CameraManager vehicle_chase frames, pulls back at speed, supports manual l
 
   // Manual look overrides temporarily
   const prevYaw = cam.getYaw();
-  input.simulateMouseMove(120, 0);
-  cam.update(1 / 60, input.consumeFrameState(), undefined, turnCtx);
+  const manualLookFrame = { ...input.consumeFrameState(), lookDeltaX: 120, lookDeltaY: 0 };
+  cam.update(1 / 60, manualLookFrame, undefined, turnCtx);
   assert.notEqual(cam.getYaw(), prevYaw);
 
   // Collider pull-in when wall sits behind vehicle
@@ -685,9 +734,7 @@ test('InputManager simultaneous vehicle touch+keyboard inputs, InteractionResolv
     isDriving: false,
     nearbyVehicle: {
       id: 'veh_1',
-      modelId: 'royal_enfield',
       displayName: 'Royal Enfield Classic',
-      category: 'motorcycle',
       distanceMeters: 1.3,
       canEnter: true,
     },
@@ -747,10 +794,10 @@ test('InputManager simultaneous vehicle touch+keyboard inputs, InteractionResolv
   assert.ok(drivingHtml.includes('58'));
   assert.ok(drivingHtml.includes('km/h'));
   assert.ok(drivingHtml.includes('DRIVE'));
-  assert.ok(drivingHtml.includes('82%'));
+  assert.ok(drivingHtml.includes('minor'));
   assert.ok(drivingHtml.includes('aria-label="Vehicle Steering"'));
   assert.ok(drivingHtml.includes('aria-label="Accelerate"'));
-  assert.ok(drivingHtml.includes('aria-label="Brake and Reverse"'));
+  assert.ok(drivingHtml.includes('aria-label="Brake or Reverse"'));
   assert.ok(drivingHtml.includes('aria-label="Handbrake"'));
   assert.ok(drivingHtml.includes('aria-label="Vehicle Horn"'));
   assert.ok(drivingHtml.includes('aria-label="Exit Vehicle"'));
@@ -766,6 +813,8 @@ test('AudioManager starts vehicle engine loop and stops it cleanly on exit, paus
       AudioContext: mockAudio.AudioContext,
       setTimeout,
       clearTimeout,
+      setInterval,
+      clearInterval,
     },
   });
 
@@ -792,7 +841,7 @@ test('AudioManager starts vehicle engine loop and stops it cleanly on exit, paus
 
     // Restart engine loop and pause game -> engine loop stops cleanly
     audio.updateDrivingAudio(1 / 60, {
-      audioKind: 'bike',
+      audioKind: 'motorcycle',
       rpmNormalized: 0.72,
       speedMps: 18,
       isBraking: true,
@@ -810,7 +859,7 @@ test('AudioManager starts vehicle engine loop and stops it cleanly on exit, paus
 });
 
 test('VehicleManager and IndexedDBStorage save and restore active/parked world vehicles without duplicates', async () => {
-  await withMockCanvasDocument(async () => {
+  await withMockCanvasDocumentAsync(async () => {
     const assets = new AssetManager();
     const mats = new MaterialLibrary(assets);
     const preset = resolveGraphicsPresetProfile('high');
@@ -844,16 +893,14 @@ test('VehicleManager and IndexedDBStorage save and restore active/parked world v
 
     await storage.saveActiveWorldVehicles(exported);
     await storage.upsertSlot({
-      id: 'slot_phase7_test',
+      slotId: 'slot_phase7_test',
+      slotType: 'manual',
       label: 'Phase 7 Test',
-      updatedAt: Date.now(),
-      playerX: 64.5,
-      playerY: 0.18,
-      playerZ: -18.25,
-      playerHeading: 1.15,
-      timeOfDaySec: 63000,
-      weatherMode: 'clear',
-      districtId: 'mananchira',
+      schemaVersion: 1,
+      districtName: 'Mananchira Square',
+      playtimeSeconds: 120,
+      savedAt: Date.now(),
+      cameraPreset: 'vehicle_chase',
       vehicleState: exported,
     });
 
@@ -879,6 +926,321 @@ test('VehicleManager and IndexedDBStorage save and restore active/parked world v
       'Original parked chunk vehicle remains suppressed so reload never creates a duplicate copy',
     );
 
+    assets.disposeAll();
+  });
+});
+
+test('RestaurantCatalog covers all 10 Kozhikode areas and 5 eatery categories with valid hours', () => {
+  assert.equal(KOZHIKODE_RESTAURANTS.length, 17);
+  const coveredAreas = new Set(KOZHIKODE_RESTAURANTS.map((r) => r.areaId));
+  for (const area of ALL_DELIVERY_AREAS) {
+    assert.ok(coveredAreas.has(area), `Expected restaurant coverage in area ${area}`);
+  }
+  const coveredCategories = new Set(KOZHIKODE_RESTAURANTS.map((r) => r.category));
+  for (const cat of ALL_RESTAURANT_CATEGORIES) {
+    assert.ok(coveredCategories.has(cat), `Expected restaurant coverage for category ${cat}`);
+  }
+
+  const biriyani = KOZHIKODE_RESTAURANTS.find((r) => r.id === 'rest_mananchira_biriyani')!;
+  assert.equal(isRestaurantOpenAtHour(biriyani, 13), true);
+  assert.equal(isRestaurantOpenAtHour(biriyani, 3), false);
+});
+
+test('DeliveryOrderSystem enforces state machine, proximity/readiness checks, bump physics, and payouts', () => {
+  const delivery = new DeliveryOrderSystem();
+  const prog = new LifestyleProgression();
+
+  const board = delivery.refreshAvailableOrders(
+    PROTAGONIST_HOME_COORDS.porchX,
+    PROTAGONIST_HOME_COORDS.porchZ,
+    18,
+    prog.getState(),
+    prog.getTipBonusMultiplier(),
+  );
+  assert.ok(board.length >= 4);
+  const target = board[0];
+  assert.ok(target.routeDistanceMeters > 0 && target.routeRealKm > 0);
+
+  const acceptRes = delivery.acceptOrder(target.orderId);
+  assert.equal(acceptRes.ok, true);
+  assert.equal(delivery.getActiveOrder()?.status, 'preparing');
+
+  // Cannot accept second order simultaneously
+  assert.equal(delivery.acceptOrder(board[1].orderId).ok, false);
+
+  // Too far from pickup rejects pickup
+  const farPickup = delivery.pickupOrder(target.pickupX + 40, target.pickupZ + 40);
+  assert.equal(farPickup.ok, false);
+
+  // At pickup before prep finishes rejects pickup cleanly
+  const prematurePickup = delivery.pickupOrder(target.pickupX, target.pickupZ);
+  assert.equal(prematurePickup.ok, false);
+
+  // Advance simulation past prepTimeSec -> becomes ready_for_pickup
+  const stepReady = delivery.update(
+    target.prepTimeSec + 0.5,
+    target.pickupX,
+    target.pickupZ,
+    18,
+    prog.getState(),
+    1.0,
+  );
+  assert.equal(stepReady.orderBecameReady, true);
+  assert.equal(delivery.getActiveOrder()?.status, 'ready_for_pickup');
+
+  // Cannot deliver before collecting food
+  assert.equal(delivery.deliverOrder(target.dropoffX, target.dropoffZ).ok, false);
+
+  // Collect at pickup within DELIVERY_INTERACTION_RANGE_METERS
+  const collected = delivery.pickupOrder(
+    target.pickupX + Math.min(2, DELIVERY_INTERACTION_RANGE_METERS - 1),
+    target.pickupZ,
+  );
+  assert.equal(collected.ok, true);
+  assert.equal(delivery.getActiveOrder()?.status, 'picked_up');
+  assert.equal(delivery.getActiveOrder()?.packageState.foodCondition, 100);
+
+  // Moving away switches to in_transit; bumps reduce food condition clamped [55..100]
+  delivery.update(0.5, target.pickupX + 20, target.pickupZ, 18, prog.getState(), 1.0);
+  assert.equal(delivery.getActiveOrder()?.status, 'in_transit');
+
+  const afterLightBump = delivery.applyTransitBump(2.0, 1.0);
+  assert.equal(afterLightBump, 100);
+  for (let i = 0; i < 8; i++) {
+    delivery.applyTransitBump(16, 1.0);
+  }
+  const minCondition = delivery.getActiveOrder()!.packageState.foodCondition;
+  assert.ok(minCondition >= 55 && minCondition < 100);
+
+  // Deliver at customer dropoff -> completes order and records legitimate ₹ income
+  const farDrop = delivery.deliverOrder(target.dropoffX + 50, target.dropoffZ);
+  assert.equal(farDrop.ok, false);
+
+  const delivered = delivery.deliverOrder(target.dropoffX + 1.5, target.dropoffZ, 1.0);
+  assert.equal(delivered.ok, true);
+  assert.ok(delivered.record && delivered.record.earnedInr > 0);
+  assert.equal(delivery.getActiveOrder(), null);
+
+  const beforeWallet = prog.getState().walletBalanceInr;
+  prog.recordCompletedDelivery(delivered.record);
+  assert.equal(prog.getState().walletBalanceInr, beforeWallet + delivered.record.earnedInr);
+  assert.equal(prog.getState().completedDeliveries, 1);
+  assert.ok(prog.getState().reputationScore > 10);
+});
+
+test('LifestyleProgression enforces legitimate wallet balances, upgrades, and owned vehicle summoning', () => {
+  withMockCanvasDocument(() => {
+    const prog = new LifestyleProgression();
+    // Insufficient funds rejected cleanly
+    assert.equal(prog.purchaseUpgrade('thermal_bag_pro').ok, false);
+    assert.equal(prog.purchaseVehicle('suzuki_access_125').ok, false);
+
+    // Earn legitimate income from deliveries
+    for (let i = 0; i < 3; i++) {
+      prog.recordCompletedDelivery({
+        orderId: `ord_${i}`,
+        restaurantId: 'rest_mananchira_biriyani',
+        restaurantName: 'Rahmath Malabar Biriyani',
+        customerName: 'Lakshmi Nair',
+        customerPlaceLabel: 'Mananchira Quarters',
+        earnedInr: 250,
+        tipEarnedInr: 40,
+        foodCondition: 96,
+        customerMood: 'happy',
+        customerReview: 'Nanni!',
+        completedAt: Date.now(),
+      });
+    }
+
+    assert.equal(prog.getState().walletBalanceInr, 1000);
+    const upgRes = prog.purchaseUpgrade('thermal_bag_pro');
+    assert.equal(upgRes.ok, true);
+    assert.equal(prog.getState().walletBalanceInr, 550);
+    assert.ok(prog.getTipBonusMultiplier() > 1.0);
+    assert.ok(prog.getBumpMitigationFactor() < 1.0);
+
+    // Earn more & buy Suzuki Access 125
+    prog.recordCompletedDelivery({
+      orderId: 'ord_extra',
+      restaurantId: 'rest_mavoor_chai',
+      restaurantName: 'Mavoor Corner Chai Peedika',
+      customerName: 'Anjali Menon',
+      customerPlaceLabel: 'Mavoor Trade Centre',
+      earnedInr: 200,
+      tipEarnedInr: 30,
+      foodCondition: 98,
+      customerMood: 'happy',
+      customerReview: 'Warm chai!',
+      completedAt: Date.now(),
+    });
+    const buyAccess = prog.purchaseVehicle('suzuki_access_125');
+    assert.equal(buyAccess.ok, true);
+    assert.ok(prog.getState().ownedVehicleModels.includes('suzuki_access_125'));
+
+    // Summon owned vehicle cleanly near player without obstacle overlap
+    const assets = new AssetManager();
+    const mats = new MaterialLibrary(assets);
+    const vm = new VehicleManager();
+    const summonRes = vm.spawnOwnedVehicleNearPlayer(
+      'suzuki_access_125',
+      0x0f766e,
+      { x: 22.5, z: 2.5, heading: 0 },
+      mats,
+      [],
+      [],
+      getGroundHeightAt,
+    );
+    assert.equal(summonRes.ok, true);
+    assert.ok(summonRes.entity?.deliveryBoxGroup, 'Two-wheeler exposes rear delivery rack box');
+    assets.disposeAll();
+  });
+});
+
+test('3D Thermal Delivery Bags, World Markers, Friendly NPC Greetings, InteractionResolver, Audio Chimes, Persistence, and Life UI SSR work end-to-end', async () => {
+  await withMockCanvasDocumentAsync(async () => {
+    // 1. Arjun & Scooter 3D thermal delivery bags toggle cleanly
+    const arjun = createArjunCharacterRig();
+    assert.equal(arjun.deliveryBagGroup.visible, false);
+    arjun.setDeliveryBagVisible(true);
+    assert.equal(arjun.deliveryBagGroup.visible, true);
+    arjun.setDeliveryBagVisible(false);
+    assert.equal(arjun.deliveryBagGroup.visible, false);
+    arjun.dispose();
+
+    const assets = new AssetManager();
+    const mats = new MaterialLibrary(assets);
+    const preset = resolveGraphicsPresetProfile('medium');
+    const streamer = new WorldStreamer(mats, preset);
+    streamer.setDeliveryMarkers({ x: 18, z: -42 }, { x: -41, z: -18 });
+    streamer.setDeliveryMarkers(null, null);
+
+    // 2. Friendly NPC greeting & InteractionResolver collect/deliver priority
+    const greet = getFriendlyNpcGreeting('ped_1', 'elderly', 'Mananchira Square', false);
+    assert.ok(greet.length > 5);
+    const teaGreet = getFriendlyNpcGreeting('ped_1', 'elderly', 'Mananchira Square', true);
+    assert.ok(teaGreet.includes('Chai'));
+
+    const collectTarget = resolveContextualInteraction({
+      nearbyBuilding: null,
+      nearHome: false,
+      homeDistanceMeters: 50,
+      isDriving: false,
+      nearbyDeliveryPickup: {
+        orderId: 'ord_1',
+        restaurantName: 'Rahmath Malabar Biriyani',
+        distanceMeters: 2.2,
+        isReady: true,
+      },
+    });
+    assert.equal(collectTarget?.kind, 'collect_order');
+    assert.equal(collectTarget?.actionLabel, 'Collect Order');
+
+    const deliverTarget = resolveContextualInteraction({
+      nearbyBuilding: null,
+      nearHome: false,
+      homeDistanceMeters: 50,
+      isDriving: false,
+      nearbyDeliveryDropoff: {
+        orderId: 'ord_1',
+        placeLabel: 'Mananchira Quarters',
+        customerName: 'Lakshmi Nair',
+        distanceMeters: 1.8,
+      },
+    });
+    assert.equal(deliverTarget?.kind, 'deliver_order');
+    assert.equal(deliverTarget?.actionLabel, 'Deliver Order');
+
+    // 3. Persistence round-trip for progression + activeOrder
+    const storage = new IndexedDBStorage();
+    await storage.initialize();
+    const state = createDefaultProgressionState();
+    state.walletBalanceInr = 740;
+    state.completedDeliveries = 3;
+    await storage.saveProgression(state, null);
+    const restored = await storage.getSavedProgression();
+    assert.equal(restored?.progression.walletBalanceInr, 740);
+    assert.equal(restored?.progression.completedDeliveries, 3);
+
+    // 4. Web Audio delivery chimes
+    const prevWin = globalThis.window;
+    const mockAudio = createMockWebAudioWindow();
+    Object.assign(globalThis, {
+      window: {
+        AudioContext: mockAudio.AudioContext,
+        setTimeout,
+        clearTimeout,
+        setInterval,
+        clearInterval,
+      },
+    });
+    try {
+      const audio = new AudioManager();
+      await audio.unlockFromGesture();
+      audio.playGameEvent('order_accept');
+      audio.playGameEvent('food_pickup');
+      audio.playGameEvent('delivery_complete');
+      audio.playGameEvent('reward_chime');
+      audio.playGameEvent('npc_greet');
+      audio.dispose();
+    } finally {
+      Object.assign(globalThis, { window: prevWin });
+    }
+
+    // 5. SSR render checks for TitleScreen ("KOZHIKODE LIFE"), HudOverlay wallet/tracker, DeliveryAndLifeModal
+    const titleHtml = renderToStaticMarkup(
+      React.createElement(TitleScreen, {
+        isBooting: false,
+        hasSavedSlot: false,
+        settings: createDefaultSettings(),
+        audio: createBaseSnapshot().audio,
+        onContinue: () => {},
+        onNewGame: () => {},
+        onOpenSettings: () => {},
+        onUpdateSettings: () => {},
+        onToggleMute: () => {},
+        onUiClick: () => {},
+      }),
+    );
+    assert.ok(titleHtml.includes('KOZHIKODE'));
+    assert.equal(titleHtml.includes('GTA KOZHIKODE'), false);
+
+    const modalHtml = renderToStaticMarkup(
+      React.createElement(DeliveryAndLifeModal, {
+        snapshot: createBaseSnapshot({
+          progression: state,
+          delivery: {
+            activeOrder: null,
+            availableOrders: [],
+            currentHour: 18,
+            nearbyRestaurant: null,
+            nearbyPickupReady: false,
+            pickupDistanceMeters: null,
+            dropoffDistanceMeters: null,
+            canCollectNearby: false,
+            canDeliverNearby: false,
+            lastFeedback: null,
+          },
+        }),
+        onClose: () => {},
+        onRefreshOrders: () => {},
+        onAcceptOrder: () => ({ ok: true, reason: '' }),
+        onPickupOrder: () => ({ ok: true, reason: '' }),
+        onDeliverOrder: () => ({ ok: true, reason: '' }),
+        onCancelOrder: () => {},
+        onNavigateRestaurant: () => {},
+        onPurchaseUpgrade: () => ({ ok: true, reason: '' }),
+        onPurchaseVehicle: () => ({ ok: true, reason: '' }),
+        onSummonVehicle: () => ({ ok: true, reason: '' }),
+        onToggleDeliveryBag: () => {},
+        onUiClick: () => {},
+      }),
+    );
+    assert.ok(modalHtml.includes('KOZHIKODE DELIVERY'));
+    assert.ok(modalHtml.includes('740'));
+    assert.ok(LIFESTYLE_UPGRADES_CATALOG.length >= 5);
+    assert.ok(PURCHASABLE_VEHICLES_CATALOG.length >= 9);
+
+    streamer.dispose();
     assets.disposeAll();
   });
 });

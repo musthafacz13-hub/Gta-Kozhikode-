@@ -1,10 +1,16 @@
+import {
+  createDefaultProgressionState,
+  sanitizeProgressionState,
+} from '../delivery/LifestyleProgression.ts';
 import type { ThirdPersonCameraPreset } from '../camera/CameraManager.ts';
 import type { Logger } from '../core/Logger.ts';
 import type {
   ControlLayoutMode,
+  DeliveryOrder,
   GameSettings,
   GraphicsTier,
   LanguageMode,
+  PlayerProgressionState,
   SaveSlotMeta,
   TimeOfDayPreset,
 } from '../types.ts';
@@ -14,6 +20,7 @@ const DB_NAME = 'gta_kozhikode_db';
 const SETTINGS_STORE = 'settings';
 const SAVE_SLOTS_STORE = 'save_slots';
 const SETTINGS_KEY = 'active_settings';
+const PROGRESSION_KEY = 'player_progression_v1';
 
 function clampNum(val: unknown, fallback: number, min: number, max: number): number {
   return typeof val === 'number' && Number.isFinite(val)
@@ -156,6 +163,10 @@ export class IndexedDBStorage {
 
   private memorySettings: GameSettings = createDefaultSettings();
   private memoryVehiclesState: import('../types.ts').SavedVehiclesState | null = null;
+  private memoryProgression: {
+    progression: PlayerProgressionState;
+    activeOrder: DeliveryOrder | null;
+  } | null = null;
   private readonly memorySlots = new Map<string, SaveSlotMeta>();
 
   constructor(logger?: Logger) {
@@ -310,6 +321,63 @@ export class IndexedDBStorage {
       return;
     }
     await this.writeRecord(SETTINGS_STORE, clean, 'active_vehicles_v1');
+  }
+
+  async getSavedProgression(): Promise<{
+    progression: PlayerProgressionState;
+    activeOrder: DeliveryOrder | null;
+  } | null> {
+    if (!this.db || this.storageMode === 'memory_fallback') {
+      if (!this.memoryProgression) return null;
+      return {
+        progression: sanitizeProgressionState(this.memoryProgression.progression),
+        activeOrder: this.memoryProgression.activeOrder
+          ? {
+              ...this.memoryProgression.activeOrder,
+              packageState: { ...this.memoryProgression.activeOrder.packageState },
+            }
+          : null,
+      };
+    }
+
+    const raw = await this.readRecord<{
+      progression?: Partial<PlayerProgressionState>;
+      activeOrder?: DeliveryOrder | null;
+    }>(SETTINGS_STORE, PROGRESSION_KEY);
+    if (!raw || !raw.progression) {
+      return null;
+    }
+    return {
+      progression: sanitizeProgressionState(raw.progression),
+      activeOrder: raw.activeOrder
+        ? {
+            ...raw.activeOrder,
+            packageState: { ...raw.activeOrder.packageState },
+          }
+        : null,
+    };
+  }
+
+  async saveProgression(
+    progression: PlayerProgressionState,
+    activeOrder: DeliveryOrder | null,
+  ): Promise<void> {
+    const clean = {
+      schemaVersion: PERSISTENCE_SCHEMA_VERSION,
+      progression: sanitizeProgressionState(progression ?? createDefaultProgressionState()),
+      activeOrder: activeOrder
+        ? { ...activeOrder, packageState: { ...activeOrder.packageState } }
+        : null,
+      updatedAt: Date.now(),
+    };
+    if (!this.db || this.storageMode === 'memory_fallback') {
+      this.memoryProgression = {
+        progression: clean.progression,
+        activeOrder: clean.activeOrder,
+      };
+      return;
+    }
+    await this.writeRecord(SETTINGS_STORE, clean, PROGRESSION_KEY);
   }
 
   close(): void {

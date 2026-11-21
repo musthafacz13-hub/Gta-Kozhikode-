@@ -17,12 +17,16 @@ import {
   MapPin,
   MessageCircle,
   Navigation,
+  Package,
   Pause,
   RotateCw,
   Settings,
+  ShoppingBag,
   Store,
+  UtensilsCrossed,
   Volume2,
   VolumeX,
+  Wallet,
   X,
   Zap,
 } from 'lucide-react';
@@ -60,6 +64,9 @@ interface HudOverlayProps {
   onVehicleControls?: (patch: VirtualVehicleControlsPatch) => void;
   onVehicleHorn?: () => void;
   onOpenWorldMap: () => void;
+  onOpenDeliveryBoard?: () => void;
+  onPickupOrder?: () => string | { ok: boolean; reason: string } | void;
+  onDeliverOrder?: () => string | { ok: boolean; reason: string } | void;
   onClearDestination: () => void;
   onUiClick: () => void;
   onVirtualMove: (x: number, y: number) => void;
@@ -69,6 +76,10 @@ interface HudOverlayProps {
 
 function renderInteractionIcon(kind: InteractionActionKind, vehicleCategory?: string) {
   switch (kind) {
+    case 'collect_order':
+      return <ShoppingBag className="h-5 w-5" strokeWidth={2.2} />;
+    case 'deliver_order':
+      return <Package className="h-5 w-5" strokeWidth={2.2} />;
     case 'enter_vehicle':
       return vehicleCategory === 'scooter' || vehicleCategory === 'motorcycle' ? (
         <Bike className="h-5 w-5" strokeWidth={2.2} />
@@ -108,6 +119,9 @@ export function HudOverlay({
   onVehicleControls,
   onVehicleHorn,
   onOpenWorldMap,
+  onOpenDeliveryBoard,
+  onPickupOrder,
+  onDeliverOrder,
   onClearDestination,
   onUiClick,
   onVirtualMove,
@@ -517,6 +531,7 @@ export function HudOverlay({
   const isCompact = layout === 'compact';
 
   // Resolve active contextual interaction strictly from live world state (never display unavailable action)
+  const fallbackOrder = snapshot.delivery?.activeOrder;
   const resolvedInteraction: ContextualInteractionTarget | null =
     snapshot.nearbyInteraction !== undefined
       ? snapshot.nearbyInteraction
@@ -524,6 +539,35 @@ export function HudOverlay({
           nearbyBuilding: snapshot.nearbyBuilding ?? null,
           nearHome: snapshot.nearHome,
           homeDistanceMeters: snapshot.homeDistanceMeters,
+          nearbyDeliveryPickup:
+            fallbackOrder &&
+            snapshot.delivery?.pickupDistanceMeters !== null &&
+            snapshot.delivery?.pickupDistanceMeters !== undefined &&
+            snapshot.delivery.pickupDistanceMeters <= 9.5 &&
+            (fallbackOrder.status === 'ready_for_pickup' ||
+              fallbackOrder.status === 'preparing' ||
+              fallbackOrder.status === 'accepted')
+              ? {
+                  orderId: fallbackOrder.orderId,
+                  restaurantName: fallbackOrder.restaurantName,
+                  malayalamName: fallbackOrder.restaurantMalayalamName,
+                  distanceMeters: snapshot.delivery.pickupDistanceMeters,
+                  isReady: fallbackOrder.status === 'ready_for_pickup',
+                  prepRemainingSec: fallbackOrder.prepRemainingSec,
+                }
+              : null,
+          nearbyDeliveryDropoff:
+            fallbackOrder &&
+            snapshot.delivery?.canDeliverNearby &&
+            snapshot.delivery?.dropoffDistanceMeters !== null &&
+            snapshot.delivery?.dropoffDistanceMeters !== undefined
+              ? {
+                  orderId: fallbackOrder.orderId,
+                  placeLabel: fallbackOrder.customerPlaceLabel,
+                  customerName: fallbackOrder.customerName,
+                  distanceMeters: snapshot.delivery.dropoffDistanceMeters,
+                }
+              : null,
           isDriving,
         });
 
@@ -531,6 +575,18 @@ export function HudOverlay({
 
   const handleContextInteract = () => {
     if (!resolvedInteraction) return;
+    if (resolvedInteraction.kind === 'collect_order') {
+      const res = onPickupOrder?.();
+      if (typeof res === 'string' && res) showTimedNotice(res);
+      else if (res && typeof res === 'object' && res.reason) showTimedNotice(res.reason);
+      return;
+    }
+    if (resolvedInteraction.kind === 'deliver_order') {
+      const res = onDeliverOrder?.();
+      if (typeof res === 'string' && res) showTimedNotice(res);
+      else if (res && typeof res === 'object' && res.reason) showTimedNotice(res.reason);
+      return;
+    }
     if (resolvedInteraction.kind === 'enter_vehicle') {
       onEnterVehicle?.();
       return;
@@ -1155,6 +1211,20 @@ export function HudOverlay({
                 </span>
               </button>
 
+              <button
+                type="button"
+                data-hud-control="true"
+                onClick={() => {
+                  onUiClick();
+                  onOpenDeliveryBoard?.();
+                }}
+                aria-label="Wallet and Reputation"
+                className="flex min-h-[30px] items-center gap-1 rounded-lg border border-emerald-400/45 bg-slate-950/90 px-2 py-0.5 font-mono-tabular text-[11px] font-bold text-emerald-300 shadow-md hover:bg-slate-900"
+              >
+                <Wallet className="h-3 w-3 shrink-0" />
+                <span>₹{snapshot.progression?.walletBalanceInr ?? 250}</span>
+              </button>
+
               {snapshot.activeDestination && (
                 <div className="flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-slate-950/90 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 shadow-lg">
                   <Navigation className="h-3 w-3 shrink-0 text-emerald-400" />
@@ -1174,11 +1244,79 @@ export function HudOverlay({
                 </div>
               )}
             </div>
+
+            {snapshot.delivery?.activeOrder && (
+              <div
+                aria-label="Active Delivery Tracker"
+                className="pointer-events-auto flex max-w-[270px] flex-wrap items-center gap-1.5 rounded-xl border border-amber-400/50 bg-slate-950/90 px-2.5 py-1 text-[11px] text-amber-100 shadow-lg"
+              >
+                <Package className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <span className="max-w-[140px] truncate font-semibold text-white">
+                  {snapshot.delivery.activeOrder.status === 'picked_up' ||
+                  snapshot.delivery.activeOrder.status === 'in_transit'
+                    ? `Deliver → ${snapshot.delivery.activeOrder.customerPlaceLabel}`
+                    : `Pickup → ${snapshot.delivery.activeOrder.restaurantName}`}
+                </span>
+                <span className="font-mono-tabular text-amber-300">
+                  {snapshot.delivery.activeOrder.status === 'preparing' ||
+                  snapshot.delivery.activeOrder.status === 'accepted'
+                    ? `${Math.ceil(snapshot.delivery.activeOrder.prepRemainingSec)}s`
+                    : snapshot.delivery.activeOrder.status === 'ready_for_pickup'
+                      ? `${snapshot.delivery.pickupDistanceMeters ?? 0}m`
+                      : `${Math.round(snapshot.delivery.activeOrder.packageState.foodCondition)}% · ${snapshot.delivery.dropoffDistanceMeters ?? 0}m`}
+                </span>
+                {snapshot.delivery.canCollectNearby && (
+                  <button
+                    type="button"
+                    data-hud-control="true"
+                    onClick={() => {
+                      onUiClick();
+                      onPickupOrder?.();
+                    }}
+                    className="rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-slate-950"
+                  >
+                    Collect
+                  </button>
+                )}
+                {snapshot.delivery.canDeliverNearby && (
+                  <button
+                    type="button"
+                    data-hud-control="true"
+                    onClick={() => {
+                      onUiClick();
+                      onDeliverOrder?.();
+                    }}
+                    className="rounded-md bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-slate-950"
+                  >
+                    Deliver
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Top-Right: Map, Optional Settings Access & Pause */}
+        {/* Top-Right: Orders & Life, Map, Optional Settings Access & Pause */}
         <div className="pointer-events-auto flex items-start gap-2">
+          <button
+            type="button"
+            data-hud-control="true"
+            onClick={() => {
+              onUiClick();
+              onOpenDeliveryBoard?.();
+            }}
+            aria-label="Delivery and Life Hub"
+            title="Open Kozhikode Delivery Orders, Eateries & Garage (J)"
+            className={`flex h-11 items-center gap-1.5 rounded-xl border px-3 shadow-lg transition-colors active:scale-95 ${
+              snapshot.delivery?.activeOrder
+                ? 'border-amber-400 bg-amber-500 text-slate-950'
+                : 'border-white/25 bg-slate-950/88 text-amber-300 hover:bg-slate-800'
+            }`}
+          >
+            <UtensilsCrossed className="h-4 w-4 shrink-0" strokeWidth={2.1} />
+            <span className="hidden text-xs font-bold sm:inline">Orders</span>
+          </button>
+
           <button
             type="button"
             data-hud-control="true"

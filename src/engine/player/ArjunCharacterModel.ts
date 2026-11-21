@@ -63,8 +63,10 @@ export interface ArjunCharacterRig {
   wristL: THREE.Group;
   wristR: THREE.Group;
   contactShadow: THREE.Mesh;
+  deliveryBagGroup: THREE.Group;
   getAppearance: () => ArjunAppearanceConfig;
   applyAppearance: (patch: Partial<ArjunAppearanceConfig>) => void;
+  setDeliveryBagVisible: (visible: boolean) => void;
   dispose: () => void;
 }
 
@@ -194,6 +196,16 @@ export function createArjunCharacterRig(
     color: 0x18181b,
     roughness: 0.75,
   });
+  const deliveryBagMat = new THREE.MeshStandardMaterial({
+    color: 0xea580c,
+    roughness: 0.56,
+    metalness: 0.06,
+  });
+  const deliveryTrimMat = new THREE.MeshStandardMaterial({
+    color: 0xfbbf24,
+    roughness: 0.38,
+    metalness: 0.15,
+  });
 
   const ownedMats: THREE.Material[] = [
     skinMat,
@@ -212,6 +224,8 @@ export function createArjunCharacterRig(
     glassFrameMat,
     glassLensMat,
     strapDarkMat,
+    deliveryBagMat,
+    deliveryTrimMat,
   ];
 
   const lod = new THREE.LOD();
@@ -363,6 +377,37 @@ export function createArjunCharacterRig(
   backpackGroup.add(packBody, packPocket);
   backpackGroup.visible = appearance.accessory === 'backpack';
   chestGroup.add(backpackGroup);
+
+  // Composite 3D Kozhikode Insulated Thermal Delivery Backpack
+  const deliveryBagGroup = new THREE.Group();
+  const thermalShell = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.34, 0.42, 0.22)), deliveryBagMat);
+  thermalShell.position.set(0, 0.14, -0.22);
+  thermalShell.castShadow = true;
+  const thermalLid = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.355, 0.055, 0.235)), strapDarkMat);
+  thermalLid.position.set(0, 0.355, -0.22);
+  thermalLid.castShadow = true;
+  const reflectiveStripe = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.30, 0.045, 0.018)), deliveryTrimMat);
+  reflectiveStripe.position.set(0, 0.15, -0.335);
+  const logoBadge = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.16, 0.08, 0.016)), strapDarkMat);
+  logoBadge.position.set(0, 0.255, -0.335);
+  const drinkSleeve = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.036, 0.034, 0.18, 10)), strapDarkMat);
+  drinkSleeve.position.set(0.185, 0.08, -0.21);
+  const shoulderStrapGeo = trackGeo(new THREE.BoxGeometry(0.044, 0.026, 0.21));
+  const shoulderStrapL = new THREE.Mesh(shoulderStrapGeo, strapDarkMat);
+  shoulderStrapL.position.set(-0.11, 0.275, -0.02);
+  const shoulderStrapR = new THREE.Mesh(shoulderStrapGeo, strapDarkMat);
+  shoulderStrapR.position.set(0.11, 0.275, -0.02);
+  deliveryBagGroup.add(
+    thermalShell,
+    thermalLid,
+    reflectiveStripe,
+    logoBadge,
+    drinkSleeve,
+    shoulderStrapL,
+    shoulderStrapR,
+  );
+  deliveryBagGroup.visible = false;
+  chestGroup.add(deliveryBagGroup);
 
   // Neck & Sculpted Head
   const neckGroup = new THREE.Group();
@@ -643,10 +688,15 @@ export function createArjunCharacterRig(
     }
     glassesGroup.visible = appearance.glasses !== 'none';
     silverChainGroup.visible = appearance.accessory === 'silver_chain';
-    backpackGroup.visible = appearance.accessory === 'backpack';
+    backpackGroup.visible = !deliveryBagGroup.visible && appearance.accessory === 'backpack';
     leftLeg.sole.visible = appearance.shoeStyle === 'sneakers';
     rightLeg.sole.visible = appearance.shoeStyle === 'sneakers';
     syncHair();
+  };
+
+  const setDeliveryBagVisible = (visible: boolean): void => {
+    deliveryBagGroup.visible = visible;
+    backpackGroup.visible = !visible && appearance.accessory === 'backpack';
   };
 
   return {
@@ -671,8 +721,10 @@ export function createArjunCharacterRig(
     wristL: leftArm.wrist,
     wristR: rightArm.wrist,
     contactShadow,
+    deliveryBagGroup,
     getAppearance: () => ({ ...appearance }),
     applyAppearance,
+    setDeliveryBagVisible,
     dispose: () => {
       for (const g of ownedGeos) g.dispose();
       for (const m of ownedMats) m.dispose();

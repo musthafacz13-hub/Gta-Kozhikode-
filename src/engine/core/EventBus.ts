@@ -8,6 +8,9 @@ export type EngineEventMap = {
   'settings:updated': { graphicsTier: string };
   'save:completed': { slotId: string; slotType: string };
   'save:restored': { slotId: string };
+  'vehicle:entered': { vehicleId: string; modelId: string; displayName: string };
+  'vehicle:exited': { vehicleId: string; modelId: string };
+  'vehicle:collision': { impactSpeedMps: number; damageState: string; kind: string };
 };
 
 type Handler<T> = (payload: T) => void;

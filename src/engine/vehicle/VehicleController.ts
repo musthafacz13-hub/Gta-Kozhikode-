@@ -574,7 +574,7 @@ export class VehicleController {
     // Use spine circles along vehicle length so long buses/trucks/cars resolve corners accurately
     const probeRadius = Math.max(0.32, Math.min(halfW * 0.96, 1.15));
     const probeSpan = Math.max(0, halfL - probeRadius * 0.85);
-    const numProbes = this.profile.length > 6.5 ? 5 : this.profile.length > 3.0 ? 3 : 2;
+    const numProbes: number = this.profile.length > 6.5 ? 5 : this.profile.length > 3.0 ? 3 : 2;
     const broadRadius = halfL + 1.2;
 
     let maxImpactSpeed = 0;

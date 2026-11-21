@@ -23,9 +23,11 @@ import {
   Search,
   Sparkles,
   Trees,
+  UtensilsCrossed,
   Waves,
   X,
 } from 'lucide-react';
+import { KOZHIKODE_RESTAURANTS } from '../engine/delivery/RestaurantCatalog.ts';
 import type { EngineHudSnapshot } from '../engine/types.ts';
 import {
   geoToWorld,
@@ -65,6 +67,7 @@ interface WorldMapModalProps {
     source: 'gazetteer' | 'google_places';
   }) => void;
   onClearDestination: () => void;
+  onOpenDeliveryBoard?: () => void;
   onUiClick: () => void;
 }
 
@@ -489,6 +492,28 @@ function GooglePlacesExplorerPanel({
         <Pin background="#10b981" borderColor="#064e3b" glyphColor="#ffffff" />
       </AdvancedMarker>
 
+      {snapshot.delivery?.activeOrder && (() => {
+        const ord = snapshot.delivery.activeOrder;
+        const pickGeo = worldToGeo(ord.pickupX, ord.pickupZ);
+        const dropGeo = worldToGeo(ord.dropoffX, ord.dropoffZ);
+        return (
+          <>
+            <AdvancedMarker
+              position={{ lat: pickGeo.lat, lng: pickGeo.lon }}
+              title={`Pickup: ${ord.restaurantName}`}
+            >
+              <Pin background="#f59e0b" borderColor="#78350f" glyphColor="#0f172a" />
+            </AdvancedMarker>
+            <AdvancedMarker
+              position={{ lat: dropGeo.lat, lng: dropGeo.lon }}
+              title={`Deliver: ${ord.customerPlaceLabel}`}
+            >
+              <Pin background="#10b981" borderColor="#064e3b" glyphColor="#0f172a" />
+            </AdvancedMarker>
+          </>
+        );
+      })()}
+
       {selectedPlace && (
         <GooglePlaceMarker place={selectedPlace} onSyncToGame={onSyncGooglePlace} />
       )}
@@ -673,6 +698,7 @@ export function WorldMapModal({
   onTravelToWorld,
   onSetDestination,
   onClearDestination,
+  onOpenDeliveryBoard,
   onUiClick,
 }: WorldMapModalProps) {
   const [activeTab, setActiveTab] = useState<MapTabMode>('district_vector');
@@ -946,7 +972,44 @@ export function WorldMapModal({
       }
     }
 
-    // 7. Protagonist Home Marker (West Hill)
+    // 7. Kozhikode Eatery & Delivery Markers
+    for (const rest of KOZHIKODE_RESTAURANTS) {
+      const rx = toScreenX(rest.pickupX);
+      const ry = toScreenY(rest.pickupZ);
+      if (rx < -20 || rx > w + 20 || ry < -20 || ry > h + 20) continue;
+      if (scale < 0.2 && selectedTarget.id !== rest.id) continue;
+      ctx.fillStyle = '#fb923c';
+      ctx.fillRect(rx - 3, ry - 3, 6, 6);
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rx - 3, ry - 3, 6, 6);
+      if (scale >= 0.65 || selectedTarget.id === rest.id) {
+        ctx.fillStyle = '#fed7aa';
+        ctx.font = '600 9px sans-serif';
+        ctx.fillText(rest.name, rx + 6, ry + 3);
+      }
+    }
+
+    const activeOrder = snapshot.delivery?.activeOrder;
+    if (activeOrder) {
+      const pxPick = toScreenX(activeOrder.pickupX);
+      const pyPick = toScreenY(activeOrder.pickupZ);
+      ctx.beginPath();
+      ctx.arc(pxPick, pyPick, 7.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+
+      const pxDrop = toScreenX(activeOrder.dropoffX);
+      const pyDrop = toScreenY(activeOrder.dropoffZ);
+      ctx.beginPath();
+      ctx.arc(pxDrop, pyDrop, 7.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+    }
+
+    // 8. Protagonist Home Marker (West Hill)
     const homeSx = toScreenX(PROTAGONIST_HOME_COORDS.houseX);
     const homeSy = toScreenY(PROTAGONIST_HOME_COORDS.houseZ);
     ctx.beginPath();
@@ -957,7 +1020,7 @@ export function WorldMapModal({
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // 8. Active HUD Destination Beacon
+    // 9. Active HUD Destination Beacon
     if (snapshot.activeDestination) {
       const dx = toScreenX(snapshot.activeDestination.worldX);
       const dy = toScreenY(snapshot.activeDestination.worldZ);
@@ -968,7 +1031,7 @@ export function WorldMapModal({
       ctx.stroke();
     }
 
-    // 9. Player Arrow
+    // 10. Player Arrow
     const px = toScreenX(snapshot.playerX);
     const py = toScreenY(snapshot.playerZ);
     ctx.save();
@@ -996,6 +1059,7 @@ export function WorldMapModal({
     snapshot.playerZ,
     snapshot.playerHeading,
     snapshot.activeDestination,
+    snapshot.delivery,
     selectedTarget,
     computedRoute,
   ]);
@@ -1153,6 +1217,20 @@ export function WorldMapModal({
           </div>
 
           <div className="flex items-center gap-1.5">
+            {onOpenDeliveryBoard && (
+              <button
+                type="button"
+                onClick={() => {
+                  onUiClick();
+                  onClose();
+                  onOpenDeliveryBoard();
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25"
+              >
+                <UtensilsCrossed className="h-3.5 w-3.5" />
+                <span>Orders</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

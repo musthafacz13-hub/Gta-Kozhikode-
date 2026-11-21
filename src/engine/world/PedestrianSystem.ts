@@ -15,6 +15,51 @@ export type PedestrianBehaviorState =
   | 'yield_vehicle'
   | 'player_react';
 
+const FRIENDLY_KOZHIKODE_GREETINGS: Record<string, string[]> = {
+  elderly: [
+    'Sugamano mone? Drive carefully through the junction.',
+    'Nice breeze from the sea today, isn’t it?',
+    'Kozhikode people always look out for one another.',
+  ],
+  student: [
+    'Hey! Are you heading towards Mananchira or the Beach?',
+    'Fresh shawarma and sulaimani smell amazing around here!',
+    'Good luck with the evening deliveries around town!',
+  ],
+  shop_customer: [
+    'Just picked up some hot Kozhikode halwa for the family!',
+    'SM Street gets so lively at golden hour.',
+    'Nanni! Riders keep this city fed and smiling.',
+  ],
+  worker: [
+    'Busy evening at the market! Watch the speed near crossings.',
+    'Grab a glass of meter chai if you get a quick break.',
+    'Safe ride ahead through Kozhikode!',
+  ],
+  default: [
+    'Sugamano? Hope your day in Kozhikode is going great!',
+    'Nothing beats a warm sulaimani by the coast after work.',
+    'Always good to see a friendly face in the neighbourhood!',
+  ],
+};
+
+export function getFriendlyNpcGreeting(
+  pedId: string,
+  variant: KeralaPedestrianVariant | string,
+  districtName: string,
+  nearTeaShop: boolean,
+): string {
+  if (nearTeaShop) {
+    return `Chai time near ${districtName}! Hot meter chai and pazham pori are sizzling.`;
+  }
+  const pool = FRIENDLY_KOZHIKODE_GREETINGS[variant] ?? FRIENDLY_KOZHIKODE_GREETINGS.default;
+  let hash = 0;
+  for (let i = 0; i < pedId.length; i++) {
+    hash = (hash * 31 + pedId.charCodeAt(i)) | 0;
+  }
+  return pool[Math.abs(hash) % pool.length];
+}
+
 interface SidewalkRoute {
   id: string;
   districtId: string;

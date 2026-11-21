@@ -34,18 +34,18 @@ export function TitleScreen({
   if (isBooting) {
     return (
       <div className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950 p-6 text-slate-100">
-        <svg viewBox="0 0 340 68" className="h-14 w-auto" role="img" aria-label="GTA Kozhikode">
+        <svg viewBox="0 0 360 68" className="h-14 w-auto" role="img" aria-label="Kozhikode Life">
           <text
-            x="170"
+            x="180"
             y="48"
             textAnchor="middle"
             fill="#f8fafc"
             fontFamily="Barlow Condensed, sans-serif"
-            fontSize="48"
+            fontSize="46"
             fontWeight="700"
             letterSpacing="2"
           >
-            GTA KOZHIKODE
+            KOZHIKODE LIFE
           </text>
         </svg>
         <div className="mt-5 h-1.5 w-56 overflow-hidden rounded-full bg-slate-800">
@@ -72,23 +72,26 @@ export function TitleScreen({
       <div className="pointer-events-auto max-w-xs sm:max-w-sm">
         <div className="rounded-2xl border border-white/15 bg-slate-950/78 p-5 shadow-2xl sm:p-6">
           <svg
-            viewBox="0 0 320 62"
+            viewBox="0 0 340 62"
             className="h-11 w-auto sm:h-14"
             role="img"
-            aria-label="GTA Kozhikode"
+            aria-label="Kozhikode Life"
           >
             <text
               x="0"
               y="46"
               fill="#f8fafc"
               fontFamily="Barlow Condensed, sans-serif"
-              fontSize="48"
+              fontSize="46"
               fontWeight="700"
               letterSpacing="1.5"
             >
-              GTA <tspan fill="#f59e0b">KOZHIKODE</tspan>
+              KOZHIKODE <tspan fill="#f59e0b">LIFE</tspan>
             </text>
           </svg>
+          <p className="mt-1 text-[11px] font-medium tracking-wide text-slate-400">
+            Open-World Kerala City &amp; Delivery Simulation
+          </p>
 
           <div className="mt-4 flex flex-col gap-2.5">
             {hasSavedSlot && (

@@ -5,10 +5,25 @@ import { EventBus } from './core/EventBus.ts';
 import { GameLoop } from './core/GameLoop.ts';
 import { Logger } from './core/Logger.ts';
 import { PerformanceMonitor } from './core/PerformanceMonitor.ts';
+import {
+  DELIVERY_INTERACTION_RANGE_METERS,
+  DeliveryOrderSystem,
+} from './delivery/DeliveryOrderSystem.ts';
+import {
+  createDefaultProgressionState,
+  LifestyleProgression,
+  PURCHASABLE_VEHICLES_CATALOG,
+} from './delivery/LifestyleProgression.ts';
+import {
+  findRestaurantNearPoint,
+  getRestaurantById,
+} from './delivery/RestaurantCatalog.ts';
 import { InputManager } from './input/InputManager.ts';
 import {
   resolveContextualInteraction,
   type ContextualInteractionTarget,
+  type NearbyDeliveryDropoffCandidate,
+  type NearbyDeliveryPickupCandidate,
 } from './interaction/InteractionResolver.ts';
 import { createDefaultSettings, IndexedDBStorage } from './persistence/IndexedDBStorage.ts';
 import type { ArjunAppearanceConfig } from './player/ArjunCharacterModel.ts';
@@ -21,6 +36,7 @@ import type {
   EngineHudSnapshot,
   GameModeState,
   GameSettings,
+  LifestyleUpgradeId,
   LogEntry,
   NearbyBuildingSummary,
   SaveSlotMeta,
@@ -39,7 +55,9 @@ import {
   KOZHIKODE_REGIONS,
   PROTAGONIST_HOME_COORDS,
 } from './world/KozhikodeGeography.ts';
+import { getFriendlyNpcGreeting } from './world/PedestrianSystem.ts';
 import { findRoadRoute } from './world/RoadNetworkGraph.ts';
+import type { VehicleModelId } from './world/VehicleVisualFactory.ts';
 
 export class GameEngine {
   readonly logger = new Logger(250, 'info');
@@ -50,6 +68,8 @@ export class GameEngine {
   readonly input = new InputManager();
   readonly perf = new PerformanceMonitor(120);
   readonly player = new PlayerController();
+  readonly delivery = new DeliveryOrderSystem();
+  readonly progression = new LifestyleProgression();
 
   private renderEngine: RenderEngine | null = null;
   private sceneManager: SceneManager | null = null;
@@ -68,6 +88,9 @@ export class GameEngine {
   private mapToggleHandler: (() => void) | null = null;
   private externalModalOpen = false;
   private vehiclesRestoredOnStart = false;
+  private discoverCheckAccumSec = 0;
+  private lastMarkerSyncKey = '';
+  private lastBagSyncKey = '';
 
   private lastHudEmitMs = 0;
   private readonly hudListeners = new Set<(snapshot: EngineHudSnapshot) => void>();
@@ -76,10 +99,18 @@ export class GameEngine {
 
   async initialize(canvasHost: HTMLElement): Promise<void> {
     try {
-      this.logger.info('GameEngine', 'Booting GTA Kozhikode Phase 2 graphics & open-world engine');
+      this.logger.info('GameEngine', 'Booting Kozhikode Life open-world simulation engine');
       await this.storage.initialize();
       this.settings = await this.storage.getSettings();
       this.slots = await this.storage.listSlots();
+      const savedProgression = await this.storage.getSavedProgression();
+      if (savedProgression) {
+        this.progression.restore(savedProgression.progression);
+        this.delivery.restoreActiveOrder(
+          savedProgression.activeOrder ?? null,
+          savedProgression.progression.deliveryHistory[0] ?? null,
+        );
+      }
       this.applyInputAndCameraSettings(this.settings);
 
       this.renderEngine = new RenderEngine(canvasHost, {
@@ -135,6 +166,18 @@ export class GameEngine {
         (x, z) => this.sceneManager!.getGroundHeight(x, z),
       );
       this.sceneManager.syncPlayerVisual(this.player.getState(), 0, this.cameraManager.camera);
+      this.delivery.refreshAvailableOrders(
+        PROTAGONIST_HOME_COORDS.porchX,
+        PROTAGONIST_HOME_COORDS.porchZ,
+        this.sceneManager.getCurrentClockHour(),
+        this.progression.getState(),
+        this.progression.getTipBonusMultiplier(),
+      );
+      const restoredOrder = this.delivery.getActiveOrder();
+      if (restoredOrder) {
+        this.applyDeliveryDestination(restoredOrder);
+      }
+      this.syncDeliveryVisuals();
       this.cameraManager.setMode('title_orbit');
 
       this.audio.attachListener(this.cameraManager.camera);
@@ -249,6 +292,40 @@ export class GameEngine {
 
     const animSnap = this.sceneManager?.getArjunAnimationSnapshot();
     const nearHome = homeDist <= 16;
+    const currentHour = this.sceneManager?.getCurrentClockHour() ?? 17.6;
+    const deliverySnap = this.delivery.buildHudSnapshot(liveX, liveZ, currentHour);
+    const activeOrder = deliverySnap.activeOrder;
+
+    const nearbyDeliveryPickup: NearbyDeliveryPickupCandidate | null =
+      !isDriving &&
+      activeOrder &&
+      (activeOrder.status === 'accepted' ||
+        activeOrder.status === 'preparing' ||
+        activeOrder.status === 'ready_for_pickup') &&
+      (deliverySnap.pickupDistanceMeters ?? 999) <= DELIVERY_INTERACTION_RANGE_METERS
+        ? {
+            orderId: activeOrder.orderId,
+            restaurantName: activeOrder.restaurantName,
+            malayalamName: activeOrder.restaurantMalayalamName,
+            distanceMeters: deliverySnap.pickupDistanceMeters ?? 0,
+            isReady: activeOrder.status === 'ready_for_pickup',
+            prepRemainingSec: activeOrder.prepRemainingSec,
+          }
+        : null;
+
+    const nearbyDeliveryDropoff: NearbyDeliveryDropoffCandidate | null =
+      !isDriving &&
+      activeOrder &&
+      (activeOrder.status === 'picked_up' || activeOrder.status === 'in_transit') &&
+      (deliverySnap.dropoffDistanceMeters ?? 999) <= DELIVERY_INTERACTION_RANGE_METERS
+        ? {
+            orderId: activeOrder.orderId,
+            placeLabel: activeOrder.customerPlaceLabel,
+            customerName: activeOrder.customerName,
+            distanceMeters: deliverySnap.dropoffDistanceMeters ?? 0,
+          }
+        : null;
+
     const nearbyNpc = !isDriving
       ? (this.sceneManager?.getNearbyPedestrianForTalk(liveX, liveZ, 2.6) ?? null)
       : null;
@@ -261,6 +338,8 @@ export class GameEngine {
       homeDistanceMeters: homeDist,
       nearbyNpc,
       nearbyVehicle,
+      nearbyDeliveryPickup,
+      nearbyDeliveryDropoff,
       isDriving,
     });
 
@@ -296,6 +375,8 @@ export class GameEngine {
       nearbyBuilding,
       nearbyInteraction,
       vehicle: vehicleHud,
+      delivery: deliverySnap,
+      progression: this.progression.getState(),
       activeDestination: activeDestinationSnapshot,
       ambientStats: this.sceneManager?.getAmbientStats(liveX, liveZ),
       audio: this.audio.getSnapshot(),
@@ -335,7 +416,14 @@ export class GameEngine {
       );
       this.vehiclesRestoredOnStart = true;
       void this.storage.saveActiveWorldVehicles(null);
+      this.progression.restore(createDefaultProgressionState());
+      this.delivery.restoreActiveOrder(null, null);
+      if (this.activeDestination?.source === 'delivery') {
+        this.activeDestination = null;
+        this.sceneManager.setDestinationBeacon(null);
+      }
       this.player.resetSpawn(PROTAGONIST_HOME_COORDS.porchX, PROTAGONIST_HOME_COORDS.porchZ, 0);
+      void this.persistProgression();
     }
 
     const pState = this.player.getState();
@@ -353,7 +441,22 @@ export class GameEngine {
         void this.restorePersistedVehiclesAsync();
       } else {
         restoredActiveDriving = this.sceneManager.vehicleManager.isDriving();
+        if (resetSpawn || this.sceneManager.vehicleManager.getWorldVehicles().length === 0) {
+          this.ensureStarterScooterNearby();
+        }
       }
+
+      if (resetSpawn) {
+        this.delivery.refreshAvailableOrders(
+          pState.x,
+          pState.z,
+          this.sceneManager.getCurrentClockHour(),
+          this.progression.getState(),
+          this.progression.getTipBonusMultiplier(),
+        );
+      }
+
+      this.syncDeliveryVisuals();
 
       if (!restoredActiveDriving) {
         this.sceneManager.syncPlayerVisual(this.player.getState(), 0, this.cameraManager?.camera);
@@ -377,10 +480,38 @@ export class GameEngine {
     this.logger.info('GameEngine', 'Entered open-world Kozhikode slice at West Hill residence');
   }
 
+  private ensureStarterScooterNearby(): void {
+    if (!this.sceneManager) return;
+    if (this.sceneManager.vehicleManager.getWorldVehicles().length > 0) return;
+    const ownedModel = this.progression.getState().ownedVehicleModels[0] ?? 'honda_activa';
+    const spec =
+      PURCHASABLE_VEHICLES_CATALOG.find((v) => v.modelId === ownedModel) ??
+      PURCHASABLE_VEHICLES_CATALOG[0];
+    this.sceneManager.vehicleManager.spawnOwnedVehicleNearPlayer(
+      spec.modelId,
+      spec.colorHex,
+      {
+        x: PROTAGONIST_HOME_COORDS.gateX + 3.2,
+        z: PROTAGONIST_HOME_COORDS.gateZ + 4.2,
+        heading: Math.PI * 0.5,
+      },
+      this.sceneManager.materials,
+      this.sceneManager.getColliders(),
+      this.sceneManager.getTrafficVehicleColliders(),
+      (x, z) => this.sceneManager!.getGroundHeight(x, z),
+    );
+  }
+
   private async restorePersistedVehiclesAsync(): Promise<void> {
     if (!this.sceneManager || this.disposed) return;
     const saved = await this.storage.getSavedWorldVehicles();
-    if (!saved || saved.vehicles.length === 0 || this.disposed) return;
+    if (this.disposed) return;
+    if (!saved || saved.vehicles.length === 0) {
+      this.ensureStarterScooterNearby();
+      this.syncDeliveryVisuals();
+      this.emitHudImmediate();
+      return;
+    }
     const groundFn = (x: number, z: number) => this.sceneManager!.getGroundHeight(x, z);
     const { restoredActiveEntity } = this.sceneManager.vehicleManager.restorePersistedState(
       saved,
@@ -401,6 +532,7 @@ export class GameEngine {
         restoredActiveEntity.controller.heading + Math.PI,
       );
     }
+    this.syncDeliveryVisuals();
     this.emitHudImmediate();
   }
 
@@ -408,6 +540,13 @@ export class GameEngine {
     if (!this.sceneManager) return;
     const state = this.sceneManager.vehicleManager.exportPersistedState();
     await this.storage.saveActiveWorldVehicles(state);
+  }
+
+  private async persistProgression(): Promise<void> {
+    await this.storage.saveProgression(
+      this.progression.getState(),
+      this.delivery.getActiveOrder(),
+    );
   }
 
   setMapToggleHandler(handler: (() => void) | null): void {
@@ -538,6 +677,7 @@ export class GameEngine {
       }
     });
     this.pushInteractionNotice(`Entered ${prof.displayName}`);
+    this.syncDeliveryVisuals();
     this.events.emit('vehicle:entered', {
       vehicleId: res.entity.id,
       modelId: res.entity.modelId,
@@ -572,6 +712,7 @@ export class GameEngine {
     this.input.clearVehicleVirtualControls();
     this.player.setEnvironment(colliders, groundFn);
     this.player.resetSpawn(res.exitX!, res.exitZ!, res.exitHeading ?? 0);
+    this.syncDeliveryVisuals();
     this.sceneManager.syncPlayerVisual(this.player.getState(), 0, this.cameraManager?.camera);
     this.cameraManager?.setMode('free_inspect');
     this.cameraManager?.snapToTarget(this.player.position, (res.exitHeading ?? 0) + Math.PI);
@@ -579,8 +720,8 @@ export class GameEngine {
       this.audio.playCharacterEvent('door_close');
     });
     this.events.emit('vehicle:exited', {
-      vehicleId: res.vehicleId,
-      modelId: res.modelId,
+      vehicleId: res.vehicleId ?? '',
+      modelId: res.modelId ?? '',
     });
     void this.persistWorldVehicles();
     this.emitHudImmediate();
@@ -601,6 +742,25 @@ export class GameEngine {
       return '';
     }
     const pState = this.player.getState();
+    const hour = this.sceneManager?.getCurrentClockHour() ?? 17.6;
+    const delSnap = this.delivery.buildHudSnapshot(pState.x, pState.z, hour);
+    if (delSnap.canDeliverNearby) {
+      const res = this.deliverNearbyOrder();
+      return res.reason;
+    }
+    if (delSnap.activeOrder && (delSnap.pickupDistanceMeters ?? 999) <= DELIVERY_INTERACTION_RANGE_METERS) {
+      if (delSnap.activeOrder.status === 'ready_for_pickup') {
+        const res = this.pickupNearbyOrder();
+        return res.reason;
+      }
+      if (
+        delSnap.activeOrder.status === 'preparing' ||
+        delSnap.activeOrder.status === 'accepted'
+      ) {
+        return `Kitchen packing order (${Math.ceil(delSnap.activeOrder.prepRemainingSec)}s left)`;
+      }
+    }
+
     const nearbyVehicle = this.sceneManager?.findNearestEnterableVehicle(pState.x, pState.z, 2.4) ?? null;
     const nearest = this.sceneManager?.findNearestInteractableBuilding(pState.x, pState.z, 8.5);
     if (
@@ -617,10 +777,19 @@ export class GameEngine {
       }
       const nearbyNpc = this.sceneManager?.getNearbyPedestrianForTalk(pState.x, pState.z, 2.6);
       if (nearbyNpc) {
+        const district = getDistrictAt(pState.x, pState.z);
+        const nearTeaShop =
+          (this.sceneManager?.getNearestTeaShopDistance(pState.x, pState.z) ?? 999) <= 22;
         void this.audio.unlockFromGesture().then(() => {
-          this.audio.playUiSound('ui_click');
+          this.audio.playGameEvent('npc_greet');
         });
-        return `${nearbyNpc.label} · "Sugamano? Busy evening in Kozhikode today!"`;
+        const line = getFriendlyNpcGreeting(
+          nearbyNpc.id,
+          nearbyNpc.variant,
+          district.name,
+          nearTeaShop,
+        );
+        return `${nearbyNpc.label} · "${line}"`;
       }
       const homeDist = Math.hypot(
         pState.x - PROTAGONIST_HOME_COORDS.gateX,
@@ -628,12 +797,13 @@ export class GameEngine {
       );
       if (homeDist <= 16) {
         this.playHomeDoorPreview();
-        return 'West Hill Tharavadu · Safe House (Interior opens in Story Phase)';
+        return "West Hill Tharavadu · Arjun's Family Home (Rest & Upgrades on Delivery Board)";
       }
       return '';
     }
     const b = nearest.building;
     const isTeaShop = b.futureHooks.businessTag === 'chai_peedika_kerala';
+    const nearRest = findRestaurantNearPoint(pState.x, pState.z, 12);
     void this.audio.unlockFromGesture().then(() => {
       if (isTeaShop) {
         this.audio.triggerTeaShopSfx('glass_clink', Math.max(1.5, nearest.distanceMeters));
@@ -644,15 +814,18 @@ export class GameEngine {
       }
     });
     if (b.ownershipStatus === 'protagonist_home') {
-      return `${b.name} (${b.malayalamName}) · Safe House (Interior opens in Story Phase)`;
+      return `${b.name} (${b.malayalamName}) · Arjun's Family Home`;
     }
     if (isTeaShop) {
-      return `${b.name} (${b.malayalamName}) · Hot Meter Chai & Pazham Pori (Economy unlocks in Phase 8)`;
+      return `${b.name} (${b.malayalamName}) · Hot Meter Chai & Pazham Pori · Check Orders for pickups`;
+    }
+    if (nearRest) {
+      return `${nearRest.restaurant.name} (${nearRest.restaurant.malayalamName}) · ${nearRest.restaurant.ambientTag}`;
     }
     if (b.interiorEligible) {
-      return `${b.name} (${b.malayalamName}) · Interior opens in Phase 11`;
+      return `${b.name} (${b.malayalamName}) · Neighbourhood Hub`;
     }
-    return `${b.name} (${b.malayalamName}) · Exterior facade`;
+    return `${b.name} (${b.malayalamName}) · Kozhikode Streetfront`;
   }
 
   private pushInteractionNotice(text: string): void {
@@ -681,8 +854,24 @@ export class GameEngine {
     worldZ: number;
     lat: number;
     lon: number;
-    source: 'gazetteer' | 'google_places';
+    source: 'gazetteer' | 'google_places' | 'delivery';
   }): void {
+    this.applyDestinationWaypoint(dest, true);
+  }
+
+  private applyDestinationWaypoint(
+    dest: {
+      id: string;
+      name: string;
+      malayalamName?: string;
+      worldX: number;
+      worldZ: number;
+      lat: number;
+      lon: number;
+      source: 'gazetteer' | 'google_places' | 'delivery';
+    },
+    playClickSound: boolean,
+  ): void {
     const pState = this.player.getState();
     const directDist = Math.round(Math.hypot(dest.worldX - pState.x, dest.worldZ - pState.z));
     const route = findRoadRoute(pState.x, pState.z, dest.worldX, dest.worldZ);
@@ -727,7 +916,265 @@ export class GameEngine {
     };
 
     this.sceneManager?.setDestinationBeacon({ x: dest.worldX, z: dest.worldZ });
+    if (playClickSound) {
+      this.audio.playUiSound('ui_click');
+    }
+    this.emitHudImmediate();
+  }
+
+  private applyDeliveryDestination(order: import('./types.ts').DeliveryOrder): void {
+    const goingToDropoff = order.status === 'picked_up' || order.status === 'in_transit';
+    const x = goingToDropoff ? order.dropoffX : order.pickupX;
+    const z = goingToDropoff ? order.dropoffZ : order.pickupZ;
+    const geo = worldToGeo(x, z);
+    this.applyDestinationWaypoint(
+      {
+        id: goingToDropoff ? order.customerId : order.restaurantId,
+        name: goingToDropoff
+          ? `Deliver: ${order.customerPlaceLabel}`
+          : `Pickup: ${order.restaurantName}`,
+        malayalamName: goingToDropoff ? order.customerName : order.restaurantMalayalamName,
+        worldX: x,
+        worldZ: z,
+        lat: geo.lat,
+        lon: geo.lon,
+        source: 'delivery',
+      },
+      false,
+    );
+  }
+
+  private syncDeliveryVisuals(): void {
+    if (!this.sceneManager) return;
+    const order = this.delivery.getActiveOrder();
+    const prog = this.progression.getState();
+    const carryingFood = Boolean(
+      order && (order.status === 'picked_up' || order.status === 'in_transit'),
+    );
+    const wantBag = prog.bagEquipped || carryingFood;
+
+    const activeVeh = this.sceneManager.vehicleManager.getActiveVehicleEntity();
+    const drivingWithRack = Boolean(activeVeh && activeVeh.deliveryBoxGroup);
+    const bagOnArjun = wantBag && !drivingWithRack;
+    const bagOnVehicle = wantBag && drivingWithRack;
+    const bagKey = `${bagOnArjun ? 1 : 0}_${bagOnVehicle ? 1 : 0}_${activeVeh?.id ?? ''}`;
+    if (bagKey !== this.lastBagSyncKey) {
+      this.lastBagSyncKey = bagKey;
+      this.sceneManager.setArjunDeliveryBagVisible(bagOnArjun);
+      this.sceneManager.vehicleManager.setActiveDeliveryBagEquipped(bagOnVehicle);
+    }
+
+    let pickupMarker: { x: number; z: number } | null = null;
+    let dropoffMarker: { x: number; z: number } | null = null;
+    if (order) {
+      if (
+        order.status === 'accepted' ||
+        order.status === 'preparing' ||
+        order.status === 'ready_for_pickup'
+      ) {
+        pickupMarker = { x: order.pickupX, z: order.pickupZ };
+      } else if (order.status === 'picked_up' || order.status === 'in_transit') {
+        dropoffMarker = { x: order.dropoffX, z: order.dropoffZ };
+      }
+    }
+    const markerKey = `${pickupMarker ? `${pickupMarker.x},${pickupMarker.z}` : 'none'}|${dropoffMarker ? `${dropoffMarker.x},${dropoffMarker.z}` : 'none'}`;
+    if (markerKey !== this.lastMarkerSyncKey) {
+      this.lastMarkerSyncKey = markerKey;
+      this.sceneManager.setDeliveryMarkers(pickupMarker, dropoffMarker);
+    }
+  }
+
+  refreshDeliveryOrders(): void {
+    const pState = this.player.getState();
+    const hour = this.sceneManager?.getCurrentClockHour() ?? 17.6;
+    this.delivery.refreshAvailableOrders(
+      pState.x,
+      pState.z,
+      hour,
+      this.progression.getState(),
+      this.progression.getTipBonusMultiplier(),
+    );
     this.audio.playUiSound('ui_click');
+    this.emitHudImmediate();
+  }
+
+  acceptDeliveryOrder(orderId: string): { ok: boolean; reason: string } {
+    const res = this.delivery.acceptOrder(orderId);
+    if (!res.ok || !res.order) {
+      this.pushInteractionNotice(res.reason);
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return { ok: false, reason: res.reason };
+    }
+    this.applyDeliveryDestination(res.order);
+    this.syncDeliveryVisuals();
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playGameEvent('order_accept');
+    });
+    this.pushInteractionNotice(res.reason);
+    void this.persistProgression();
+    this.emitHudImmediate();
+    return { ok: true, reason: res.reason };
+  }
+
+  pickupNearbyOrder(): { ok: boolean; reason: string } {
+    const pState = this.player.getState();
+    const res = this.delivery.pickupOrder(pState.x, pState.z);
+    if (!res.ok || !res.order) {
+      this.pushInteractionNotice(res.reason);
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return { ok: false, reason: res.reason };
+    }
+    this.progression.discoverRestaurant(res.order.restaurantId);
+    this.applyDeliveryDestination(res.order);
+    this.syncDeliveryVisuals();
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playGameEvent('food_pickup');
+    });
+    this.pushInteractionNotice(res.reason);
+    void this.persistProgression();
+    this.emitHudImmediate();
+    return { ok: true, reason: res.reason };
+  }
+
+  deliverNearbyOrder(): { ok: boolean; reason: string } {
+    const pState = this.player.getState();
+    const res = this.delivery.deliverOrder(
+      pState.x,
+      pState.z,
+      this.progression.getTipBonusMultiplier(),
+    );
+    if (!res.ok || !res.record) {
+      this.pushInteractionNotice(res.reason);
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return { ok: false, reason: res.reason };
+    }
+    this.progression.recordCompletedDelivery(res.record);
+    if (this.activeDestination?.source === 'delivery') {
+      this.activeDestination = null;
+      this.sceneManager?.setDestinationBeacon(null);
+    }
+    this.syncDeliveryVisuals();
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playGameEvent('delivery_complete');
+      this.audio.playGameEvent('reward_chime');
+    });
+    this.pushInteractionNotice(`${res.reason} · "${res.record.customerReview}"`);
+    void this.persistProgression();
+    this.emitHudImmediate();
+    return { ok: true, reason: res.reason };
+  }
+
+  cancelActiveOrder(): void {
+    const cancelled = this.delivery.cancelActiveOrder();
+    if (!cancelled) return;
+    if (this.activeDestination?.source === 'delivery') {
+      this.activeDestination = null;
+      this.sceneManager?.setDestinationBeacon(null);
+    }
+    this.syncDeliveryVisuals();
+    this.audio.playUiSound('ui_back');
+    this.pushInteractionNotice(`Cancelled order from ${cancelled.restaurantName}`);
+    void this.persistProgression();
+    this.emitHudImmediate();
+  }
+
+  navigateToRestaurant(restaurantId: string): void {
+    const rest = getRestaurantById(restaurantId);
+    if (!rest) return;
+    const geo = worldToGeo(rest.pickupX, rest.pickupZ);
+    this.setDestinationWaypoint({
+      id: rest.id,
+      name: rest.name,
+      malayalamName: rest.malayalamName,
+      worldX: rest.pickupX,
+      worldZ: rest.pickupZ,
+      lat: geo.lat,
+      lon: geo.lon,
+      source: 'gazetteer',
+    });
+    this.pushInteractionNotice(`Route set to ${rest.name} (${rest.areaLabel})`);
+  }
+
+  purchaseLifestyleUpgrade(upgradeId: LifestyleUpgradeId): { ok: boolean; reason: string } {
+    const res = this.progression.purchaseUpgrade(upgradeId);
+    if (!res.ok) {
+      this.pushInteractionNotice(res.reason);
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return res;
+    }
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playGameEvent('reward_chime');
+    });
+    this.pushInteractionNotice(res.reason);
+    void this.persistProgression();
+    this.emitHudImmediate();
+    return res;
+  }
+
+  purchaseOwnedVehicle(modelId: VehicleModelId): { ok: boolean; reason: string } {
+    const res = this.progression.purchaseVehicle(modelId);
+    if (!res.ok) {
+      this.pushInteractionNotice(res.reason);
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return { ok: false, reason: res.reason };
+    }
+    void this.audio.unlockFromGesture().then(() => {
+      this.audio.playGameEvent('reward_chime');
+    });
+    this.pushInteractionNotice(res.reason);
+    void this.persistProgression();
+    this.emitHudImmediate();
+    return { ok: true, reason: res.reason };
+  }
+
+  summonOwnedVehicle(modelId: VehicleModelId): { ok: boolean; reason: string } {
+    if (!this.sceneManager) {
+      return { ok: false, reason: 'World scene not ready yet' };
+    }
+    const owned = this.progression.getState().ownedVehicleModels;
+    if (!owned.includes(modelId)) {
+      const reason = 'Purchase this vehicle in the Garage first';
+      this.pushInteractionNotice(reason);
+      this.audio.playUiSound('ui_back');
+      return { ok: false, reason };
+    }
+    const spec =
+      PURCHASABLE_VEHICLES_CATALOG.find((v) => v.modelId === modelId) ??
+      PURCHASABLE_VEHICLES_CATALOG[0];
+    const pState = this.player.getState();
+    const res = this.sceneManager.vehicleManager.spawnOwnedVehicleNearPlayer(
+      modelId,
+      spec.colorHex,
+      { x: pState.x, z: pState.z, heading: pState.heading },
+      this.sceneManager.materials,
+      this.sceneManager.getColliders(),
+      this.sceneManager.getTrafficVehicleColliders(),
+      (x, z) => this.sceneManager!.getGroundHeight(x, z),
+    );
+    if (!res.ok) {
+      this.pushInteractionNotice(res.reason);
+      this.audio.playUiSound('ui_back');
+      this.emitHudImmediate();
+      return { ok: false, reason: res.reason };
+    }
+    this.audio.playUiSound('ui_click');
+    this.pushInteractionNotice(res.reason);
+    void this.persistWorldVehicles();
+    this.emitHudImmediate();
+    return { ok: true, reason: res.reason };
+  }
+
+  toggleDeliveryBag(equipped?: boolean): void {
+    const next = equipped ?? !this.progression.getState().bagEquipped;
+    this.progression.setBagEquipped(next);
+    this.syncDeliveryVisuals();
+    this.audio.playUiSound('ui_click');
+    void this.persistProgression();
     this.emitHudImmediate();
   }
 
@@ -867,6 +1314,7 @@ export class GameEngine {
     const district = getDistrictAt(saveX, saveZ);
     const vehicleState = this.sceneManager?.vehicleManager.exportPersistedState();
     await this.storage.saveActiveWorldVehicles(vehicleState ?? null);
+    await this.persistProgression();
 
     const slotType = slotId.startsWith('slot_auto') ? 'autosave' : 'manual';
     const saved = await this.storage.upsertSlot({
@@ -879,6 +1327,8 @@ export class GameEngine {
       savedAt: Date.now(),
       cameraPreset: this.cameraManager?.getStatePreset() ?? 'free_inspect',
       vehicleState,
+      progressionState: this.progression.getState(),
+      activeOrder: this.delivery.getActiveOrder(),
     });
     this.activeSlotId = saved.slotId;
     this.slots = await this.storage.listSlots();
@@ -1022,6 +1472,22 @@ export class GameEngine {
             },
             onCollision: (ev) => {
               this.audio.playDrivingCollision(audioKind, ev.impactSpeedMps);
+              const carrying = this.delivery.getActiveOrder();
+              if (
+                carrying &&
+                (carrying.status === 'picked_up' || carrying.status === 'in_transit')
+              ) {
+                const prevCond = Math.round(carrying.packageState.foodCondition);
+                const nextCond = this.delivery.applyTransitBump(
+                  ev.impactSpeedMps,
+                  this.progression.getBumpMitigationFactor(),
+                );
+                if (nextCond < prevCond) {
+                  this.pushInteractionNotice(
+                    `Easy on the bumps! Food condition ${nextCond}%`,
+                  );
+                }
+              }
               this.events.emit('vehicle:collision', {
                 impactSpeedMps: ev.impactSpeedMps,
                 damageState: ev.damageState,
@@ -1069,6 +1535,45 @@ export class GameEngine {
         const moveState = this.player.update(fixedDt, frameInput, camYaw, obstacles);
         this.sceneManager?.syncPlayerVisual(moveState, fixedDt, this.cameraManager?.camera);
       }
+
+      // Advance active delivery kitchen countdown, transit status & city discovery
+      const livePos = this.player.getState();
+      const clockHour = this.sceneManager?.getCurrentClockHour() ?? 17.6;
+      const delStep = this.delivery.update(
+        fixedDt,
+        livePos.x,
+        livePos.z,
+        clockHour,
+        this.progression.getState(),
+        this.progression.getTipBonusMultiplier(),
+      );
+      if (delStep.orderBecameReady) {
+        const activeOrd = this.delivery.getActiveOrder();
+        this.pushInteractionNotice(
+          `${activeOrd?.restaurantName ?? 'Order'} packed & ready for pickup!`,
+        );
+        this.audio.playGameEvent('notification');
+        void this.persistProgression();
+      }
+      this.discoverCheckAccumSec += fixedDt;
+      if (this.discoverCheckAccumSec >= 0.4) {
+        this.discoverCheckAccumSec = 0;
+        const curDistrict = getDistrictAt(livePos.x, livePos.z);
+        const newDist = this.progression.discoverDistrict(curDistrict.id);
+        const nearRest = findRestaurantNearPoint(livePos.x, livePos.z, 16);
+        const newRest = nearRest
+          ? this.progression.discoverRestaurant(nearRest.restaurant.id)
+          : false;
+        if (newRest && nearRest) {
+          this.pushInteractionNotice(
+            `Discovered ${nearRest.restaurant.name} (${nearRest.restaurant.areaLabel})`,
+          );
+        }
+        if (newDist || newRest) {
+          void this.persistProgression();
+        }
+      }
+      this.syncDeliveryVisuals();
     } else {
       this.audio.updateDrivingAudio(fixedDt, null);
     }

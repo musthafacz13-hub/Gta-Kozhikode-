@@ -42,6 +42,11 @@ export type GameSfxEvent =
   | 'ui_click'
   | 'ui_back'
   | 'notification'
+  | 'order_accept'
+  | 'food_pickup'
+  | 'delivery_complete'
+  | 'reward_chime'
+  | 'npc_greet'
   | 'mission_start'
   | 'mission_complete'
   | 'cinematic_whoosh';

@@ -106,7 +106,7 @@ const SCORE_CONFIGS: Record<MusicContextId, ContextScoreConfig> = {
     padFilterHz: 620,
   },
   mission: {
-    label: 'Kallai Syndicate Pulse',
+    label: 'Kallai Moonlight Breeze',
     stepMs: 420,
     chords: [
       [146.83, 174.61, 220.0, 293.66],
