@@ -70,11 +70,11 @@ export function PauseDiagnosticsModal({
   const [view, setView] = useState<MenuView>(initialTab);
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/85 p-4">
-      <div className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-900 text-slate-100 shadow-2xl">
+    <div className="kl-modal-backdrop fixed inset-0 z-30 flex items-center justify-center p-4">
+      <div className="kl-modal-shell kl-anim-modal flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden text-slate-100">
         {/* Clean Game Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-          <h2 className="font-display text-2xl font-bold tracking-wide text-white">
+        <div className="kl-hub-header flex items-center justify-between px-5 py-4">
+          <h2 className="kl-display font-display text-2xl font-bold tracking-wide text-white">
             {view === 'pause' && 'PAUSED'}
             {view === 'saves' && 'SAVE SLOTS'}
             {view === 'settings' && 'SETTINGS & AUDIO'}
@@ -85,19 +85,19 @@ export function PauseDiagnosticsModal({
             type="button"
             onClick={onClose}
             aria-label="Close Menu"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-white/10 bg-slate-800 text-slate-200 hover:bg-slate-700"
+            className="kl-btn-tactile flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-white/10 bg-slate-800 text-slate-200 hover:bg-slate-700"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="kl-scroll flex-1 overflow-y-auto p-5">
           {view === 'pause' && (
             <div className="flex flex-col gap-2.5">
               <button
                 type="button"
                 onClick={onResumePlay}
-                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-amber-500 text-sm font-bold text-slate-950 hover:bg-amber-400"
+                className="kl-btn-tactile flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-amber-500 text-sm font-bold text-slate-950 hover:bg-amber-400"
               >
                 <Play className="h-4 w-4 fill-current" />
                 <span>Resume</span>
@@ -224,7 +224,7 @@ export function PauseDiagnosticsModal({
           {view === 'settings' && (
             <div className="space-y-5">
               {/* Audio Mixer Section */}
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+              <div className="kl-surface-panel rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-300">
                     <Volume2 className="h-4 w-4" />

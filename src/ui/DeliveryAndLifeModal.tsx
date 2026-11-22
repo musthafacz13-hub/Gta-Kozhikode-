@@ -121,27 +121,27 @@ export function DeliveryAndLifeModal({
     <div
       role="dialog"
       aria-label="Kozhikode Food Delivery and Lifestyle Hub"
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/90 p-2 sm:p-4"
+      className="kl-modal-backdrop fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-4"
     >
-      <div className="flex h-full max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-900 text-slate-100 shadow-2xl">
+      <div className="kl-modal-shell kl-anim-modal flex h-full max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden text-slate-100">
         {/* Header Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/90 px-4 py-3">
+        <div className="kl-hub-header flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
               <UtensilsCrossed className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="font-display text-lg font-bold tracking-wide text-white sm:text-xl">
+              <h2 className="kl-display font-display text-lg font-bold tracking-wide text-white sm:text-xl">
                 KOZHIKODE DELIVERY &amp; LIFE
               </h2>
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                <span className="font-mono-tabular font-semibold text-emerald-300">
+                <span className="kl-tabular font-mono-tabular font-semibold text-emerald-300">
                   Wallet ₹{walletInr}
                 </span>
                 <span>·</span>
                 <span>{progression?.reputationTier ?? 'Newcomer'}</span>
                 <span>·</span>
-                <span className="font-mono-tabular">{completedCount} deliveries</span>
+                <span className="kl-tabular font-mono-tabular">{completedCount} deliveries</span>
               </div>
             </div>
           </div>
@@ -153,14 +153,14 @@ export function DeliveryAndLifeModal({
               onClose();
             }}
             aria-label="Close Delivery and Life Hub"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-white/15 bg-slate-800 text-slate-200 hover:bg-slate-700"
+            className="kl-btn-tactile flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-white/15 bg-slate-800 text-slate-200 hover:bg-slate-700"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="grid grid-cols-4 gap-1.5 border-b border-white/10 bg-slate-950/60 px-3 py-2">
+        <div className="kl-tab-strip grid grid-cols-4 gap-1.5 px-3 py-2">
           {(
             [
               ['orders', 'Orders', Package],
@@ -176,10 +176,8 @@ export function DeliveryAndLifeModal({
                 onUiClick();
                 setTab(id);
               }}
-              className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-bold transition-colors ${
-                tab === id
-                  ? 'bg-amber-500 text-slate-950'
-                  : 'border border-white/10 bg-slate-900 text-slate-200 hover:bg-slate-800'
+              className={`kl-tab-btn kl-btn-tactile flex min-h-[44px] items-center justify-center gap-1.5 px-2 text-xs font-bold ${
+                tab === id ? 'kl-tab-btn--active' : ''
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -189,18 +187,18 @@ export function DeliveryAndLifeModal({
         </div>
 
         {feedbackBanner && (
-          <div className="border-b border-amber-400/30 bg-amber-500/15 px-4 py-2 text-xs font-medium text-amber-100">
+          <div className="kl-anim-reward border-b border-amber-400/35 bg-amber-500/18 px-4 py-2 text-xs font-semibold text-amber-100">
             {feedbackBanner}
           </div>
         )}
 
         {/* Scrollable Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="kl-scroll min-h-0 flex-1 overflow-y-auto p-4">
           {tab === 'orders' && (
             <div className="space-y-4">
               {/* Active Order Live Card */}
               {activeOrder ? (
-                <div className="rounded-xl border border-amber-400/45 bg-slate-950/90 p-4">
+                <div className="kl-surface-panel kl-anim-card rounded-xl border-amber-400/45 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <div className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
@@ -223,7 +221,61 @@ export function DeliveryAndLifeModal({
                     </div>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-slate-900/90 px-3 py-2 font-mono-tabular text-xs text-slate-200">
+                  {/* 3-Step Order Progress Stepper */}
+                  <div className="kl-order-stepper mt-3" aria-label="Order Stepper">
+                    <div
+                      className={`kl-order-step ${
+                        activeOrder.status === 'ready_for_pickup' ||
+                        activeOrder.status === 'picked_up' ||
+                        activeOrder.status === 'in_transit'
+                          ? 'kl-order-step--done'
+                          : 'kl-order-step--active'
+                      }`}
+                    >
+                      1. Kitchen Prep
+                    </div>
+                    <div
+                      className={`kl-order-step ${
+                        activeOrder.status === 'picked_up' || activeOrder.status === 'in_transit'
+                          ? 'kl-order-step--done'
+                          : activeOrder.status === 'ready_for_pickup'
+                            ? 'kl-order-step--active'
+                            : ''
+                      }`}
+                    >
+                      2. Collect Parcel
+                    </div>
+                    <div
+                      className={`kl-order-step ${
+                        activeOrder.status === 'picked_up' || activeOrder.status === 'in_transit'
+                          ? 'kl-order-step--active'
+                          : ''
+                      }`}
+                    >
+                      3. Deliver Hot Meal
+                    </div>
+                  </div>
+
+                  <div className="kl-hud-progress-track mt-2.5">
+                    <div
+                      className={`kl-hud-progress-fill kl-progress-sheen ${
+                        activeOrder.status === 'picked_up' || activeOrder.status === 'in_transit'
+                          ? 'bg-emerald-400'
+                          : 'bg-amber-400'
+                      }`}
+                      style={{
+                        width: `${
+                          activeOrder.status === 'picked_up' || activeOrder.status === 'in_transit'
+                            ? Math.max(12, Math.round(activeOrder.packageState.temperaturePct))
+                            : activeOrder.status === 'ready_for_pickup'
+                              ? 100
+                              : Math.max(18, Math.round(100 - activeOrder.prepRemainingSec * 6))
+                        }%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="kl-tabular mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-slate-900/90 px-3 py-2 font-mono-tabular text-xs text-slate-200">
                     {(activeOrder.status === 'accepted' || activeOrder.status === 'preparing') && (
                       <span>
                         Kitchen packing:{' '}
@@ -340,7 +392,7 @@ export function DeliveryAndLifeModal({
                 {filteredOrders.map((order) => (
                   <div
                     key={order.orderId}
-                    className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-950/80 p-3.5"
+                    className="kl-surface-card kl-anim-card flex flex-col justify-between rounded-xl p-3.5"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2">
@@ -454,7 +506,7 @@ export function DeliveryAndLifeModal({
                   return (
                     <div
                       key={rest.id}
-                      className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-950/80 p-3.5"
+                      className={`kl-restaurant-card kl-category-accent--${rest.category} kl-anim-card flex flex-col justify-between`}
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2">
@@ -554,7 +606,7 @@ export function DeliveryAndLifeModal({
                     return (
                       <div
                         key={veh.modelId}
-                        className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-950/80 p-3.5"
+                        className="kl-surface-card flex flex-col justify-between rounded-xl p-3.5"
                       >
                         <div>
                           <div className="flex items-start justify-between gap-2">
@@ -696,18 +748,20 @@ export function DeliveryAndLifeModal({
                     {progression.deliveryHistory.map((item) => (
                       <div
                         key={item.orderId}
-                        className="rounded-xl border border-white/10 bg-slate-950/80 p-3"
+                        className="kl-surface-card kl-anim-card rounded-xl p-3"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-xs font-bold text-white">
                             {item.restaurantName} → {item.customerName} ({item.customerPlaceLabel})
                           </div>
-                          <div className="font-mono-tabular text-xs font-bold text-emerald-300">
+                          <div className="kl-tabular font-mono-tabular text-xs font-bold text-emerald-300">
                             +₹{item.earnedInr} (Tip ₹{item.tipEarnedInr})
                           </div>
                         </div>
-                        <p className="mt-1 text-xs text-slate-300">"{item.customerReview}"</p>
-                        <div className="mt-1 flex items-center gap-2 font-mono-tabular text-[11px] text-slate-400">
+                        <p className="kl-review-quote kl-anim-reward mt-1.5 text-xs text-slate-200">
+                          "{item.customerReview}"
+                        </p>
+                        <div className="kl-tabular mt-1.5 flex items-center gap-2 font-mono-tabular text-[11px] text-slate-400">
                           <Clock className="h-3 w-3" />
                           <span>Food condition {item.foodCondition}%</span>
                         </div>

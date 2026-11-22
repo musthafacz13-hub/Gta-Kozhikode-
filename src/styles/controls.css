@@ -1,0 +1,119 @@
+/* Touch & Vehicle Controls Styling */
+
+.kl-joystick-ring {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(226, 232, 240, 0.28);
+  background: radial-gradient(circle at center, rgba(15, 23, 42, 0.55), rgba(7, 13, 22, 0.78));
+  box-shadow:
+    inset 0 0 18px rgba(2, 6, 23, 0.65),
+    0 8px 22px rgba(2, 6, 23, 0.42);
+  touch-action: none;
+  user-select: none;
+}
+
+.kl-joystick-ring--active {
+  border-color: rgba(251, 191, 36, 0.68);
+  box-shadow:
+    inset 0 0 18px rgba(245, 158, 11, 0.16),
+    0 8px 24px rgba(2, 6, 23, 0.5);
+}
+
+.kl-joystick-knob {
+  border-radius: 9999px;
+  border: 1.5px solid rgba(254, 243, 199, 0.72);
+  background: linear-gradient(145deg, rgba(251, 191, 36, 0.9), rgba(217, 119, 6, 0.85));
+  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.55);
+  transition: transform 60ms ease-out;
+}
+
+.kl-control-pad {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-weight: 700;
+  color: var(--kl-ink-primary);
+  box-shadow: var(--kl-shadow-sm);
+  touch-action: none;
+  user-select: none;
+  transition:
+    transform 110ms var(--kl-ease-spring),
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.kl-control-pad:active,
+.kl-control-pad--pressed {
+  transform: scale(0.92);
+}
+
+.kl-control-pad--jump {
+  border: 1.5px solid rgba(226, 232, 240, 0.3);
+  background: linear-gradient(155deg, rgba(16, 28, 42, 0.9), rgba(9, 16, 26, 0.92));
+}
+
+.kl-control-pad--sprint {
+  border: 1.5px solid rgba(56, 189, 248, 0.34);
+  background: linear-gradient(155deg, rgba(12, 34, 52, 0.88), rgba(8, 19, 32, 0.92));
+}
+
+.kl-control-pad--sprint.kl-control-pad--pressed {
+  border-color: rgba(251, 191, 36, 0.75);
+  background: linear-gradient(155deg, rgba(180, 83, 9, 0.88), rgba(120, 53, 15, 0.92));
+  color: #fef3c7;
+}
+
+.kl-steer-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(226, 232, 240, 0.28);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(7, 13, 22, 0.84));
+  box-shadow: inset 0 0 14px rgba(2, 6, 23, 0.65);
+  touch-action: none;
+  user-select: none;
+}
+
+.kl-steer-knob {
+  border-radius: 9999px;
+  border: 1.5px solid rgba(186, 230, 253, 0.78);
+  background: linear-gradient(145deg, rgba(56, 189, 248, 0.92), rgba(3, 105, 161, 0.9));
+  box-shadow: 0 3px 10px rgba(2, 6, 23, 0.55);
+}
+
+.kl-pedal {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--kl-radius-lg);
+  font-weight: 700;
+  touch-action: none;
+  user-select: none;
+  transition: transform 100ms var(--kl-ease-spring), box-shadow 120ms ease;
+}
+
+.kl-pedal:active,
+.kl-pedal--pressed {
+  transform: scale(0.93) translateY(1px);
+}
+
+.kl-pedal--gas {
+  border: 1.5px solid rgba(52, 211, 153, 0.55);
+  background: linear-gradient(160deg, rgba(6, 95, 70, 0.94), rgba(6, 52, 41, 0.94));
+  color: #ecfdf5;
+}
+
+.kl-pedal--brake {
+  border: 1.5px solid rgba(251, 113, 133, 0.5);
+  background: linear-gradient(160deg, rgba(136, 19, 55, 0.94), rgba(76, 5, 25, 0.94));
+  color: #ffe4e6;
+}

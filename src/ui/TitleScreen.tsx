@@ -3,6 +3,7 @@ import { Play, RotateCcw, Settings, Volume2, VolumeX } from 'lucide-react';
 import type { AudioStateSnapshot } from '../engine/audio/AudioTypes.ts';
 import type { GameSettings } from '../engine/types.ts';
 import { BottomAudioPanel } from './BottomAudioPanel.tsx';
+import { PWAInstallPrompt } from './PWAInstallPrompt.tsx';
 
 interface TitleScreenProps {
   isBooting: boolean;
@@ -33,7 +34,7 @@ export function TitleScreen({
 
   if (isBooting) {
     return (
-      <div className="fixed inset-0 z-30 flex flex-col items-center justify-center bg-slate-950 p-6 text-slate-100">
+      <div className="kl-title-backdrop fixed inset-0 z-30 flex flex-col items-center justify-center p-6 text-slate-100">
         <svg viewBox="0 0 360 68" className="h-14 w-auto" role="img" aria-label="Kozhikode Life">
           <text
             x="180"
@@ -48,10 +49,10 @@ export function TitleScreen({
             KOZHIKODE LIFE
           </text>
         </svg>
-        <div className="mt-5 h-1.5 w-56 overflow-hidden rounded-full bg-slate-800">
-          <div className="h-full w-2/3 rounded-full bg-amber-500" />
+        <div className="mt-5 h-2 w-56 overflow-hidden rounded-full bg-slate-800">
+          <div className="kl-progress-sheen h-full w-2/3 rounded-full bg-amber-500" />
         </div>
-        <p className="mt-3 text-xs tracking-wider text-slate-400">Loading Mananchira &amp; Kozhikode Coast...</p>
+        <p className="mt-3 text-xs tracking-wider text-slate-300">Loading Mananchira &amp; Kozhikode Coast...</p>
       </div>
     );
   }
@@ -60,7 +61,7 @@ export function TitleScreen({
 
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-4 sm:p-10"
+      className="kl-title-backdrop kl-safe-pad pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-4 sm:p-10"
       style={{
         paddingTop: 'max(1rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
@@ -70,7 +71,7 @@ export function TitleScreen({
     >
       {/* Upper-Left Clean Title Lockup & Main Menu */}
       <div className="pointer-events-auto max-w-xs sm:max-w-sm">
-        <div className="rounded-2xl border border-white/15 bg-slate-950/78 p-5 shadow-2xl sm:p-6">
+        <div className="kl-title-card kl-anim-title p-5 sm:p-6">
           <svg
             viewBox="0 0 340 62"
             className="h-11 w-auto sm:h-14"
@@ -98,7 +99,7 @@ export function TitleScreen({
               <button
                 type="button"
                 onClick={onContinue}
-                className="flex min-h-[46px] w-full items-center justify-center gap-2.5 rounded-xl bg-amber-500 px-5 text-sm font-bold tracking-wide text-slate-950 transition-colors hover:bg-amber-400 active:scale-[0.98]"
+                className="kl-btn-tactile flex min-h-[46px] w-full items-center justify-center gap-2.5 rounded-xl bg-amber-500 px-5 text-sm font-bold tracking-wide text-slate-950 hover:bg-amber-400"
               >
                 <Play className="h-4 w-4 fill-current" />
                 <span>Continue</span>
@@ -108,7 +109,7 @@ export function TitleScreen({
             <button
               type="button"
               onClick={onNewGame}
-              className={`flex min-h-[46px] w-full items-center justify-center gap-2.5 rounded-xl px-5 text-sm font-bold tracking-wide transition-colors active:scale-[0.98] ${
+              className={`kl-btn-tactile flex min-h-[46px] w-full items-center justify-center gap-2.5 rounded-xl px-5 text-sm font-bold tracking-wide ${
                 hasSavedSlot
                   ? 'border border-white/15 bg-slate-900/90 text-white hover:bg-slate-800'
                   : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
@@ -124,11 +125,15 @@ export function TitleScreen({
                 onUiClick();
                 onOpenSettings();
               }}
-              className="flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-slate-900/85 px-5 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-800"
+              className="kl-btn-tactile flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-slate-900/85 px-5 text-sm font-medium text-slate-100 hover:bg-slate-800"
             >
               <Settings className="h-4 w-4" />
               <span>Settings &amp; Audio</span>
             </button>
+
+            <div className="mt-1 flex justify-center">
+              <PWAInstallPrompt onUiClick={onUiClick} />
+            </div>
           </div>
         </div>
       </div>
@@ -149,12 +154,12 @@ export function TitleScreen({
         )}
 
         <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs text-slate-200/90">
-          <div className="rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2">
+          <div className="kl-hud-card px-3 py-2">
             Drag to Look · Joystick or WASD to Move
           </div>
 
           <div className="pointer-events-auto flex items-center gap-2">
-            <div className="hidden rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2 text-[11px] text-slate-400 sm:block">
+            <div className="kl-hud-card hidden px-3 py-2 text-[11px] text-slate-400 sm:block">
               Kozhikode Geo-Architecture · OpenStreetMap ODbL
             </div>
 
@@ -167,7 +172,7 @@ export function TitleScreen({
               }}
               aria-label="Title Screen Audio Settings"
               aria-expanded={showAudioPanel}
-              className={`flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 shadow-lg transition-colors ${
+              className={`kl-btn-tactile flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 shadow-lg ${
                 settings.masterMuted
                   ? 'border-rose-400/50 bg-slate-950/90 text-rose-300'
                   : showAudioPanel
@@ -180,7 +185,7 @@ export function TitleScreen({
               ) : (
                 <Volume2 className="h-4 w-4 shrink-0" strokeWidth={2.2} />
               )}
-              <span className="font-mono-tabular text-xs font-bold">
+              <span className="kl-tabular font-mono-tabular text-xs font-bold">
                 {settings.masterMuted ? 'MUTE' : `${effectiveMasterPct}%`}
               </span>
             </button>

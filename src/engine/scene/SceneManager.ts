@@ -5,8 +5,10 @@ import type { TeaShopSfxEvent } from '../audio/AudioTypes.ts';
 import {
   ArjunAnimator,
   type ArjunAnimatorSnapshot,
+  type ArjunContextualAction,
   type SeatedVehiclePoseInput,
 } from '../player/ArjunAnimator.ts';
+export type { ArjunContextualAction } from '../player/ArjunAnimator.ts';
 import {
   createArjunCharacterRig,
   type ArjunAppearanceConfig,
@@ -30,6 +32,7 @@ import type { DynamicVehicleColliderRef } from '../vehicle/VehicleController.ts'
 import type { RegisteredBuildingRecord } from '../world/BuildingSystem.ts';
 import { getGroundHeightAt } from '../world/KozhikodeGeography.ts';
 import { PedestrianSystem } from '../world/PedestrianSystem.ts';
+import type { AnimatedRestaurantInstance } from '../world/RestaurantInteriorFactory.ts';
 import { TrafficSystem, type TrafficHornEvent } from '../world/TrafficSystem.ts';
 import { WorldStreamer } from '../world/WorldStreamer.ts';
 
@@ -107,6 +110,10 @@ export class SceneManager {
 
   getActiveBuildings(): RegisteredBuildingRecord[] {
     return this.worldStreamer.getActiveBuildings();
+  }
+
+  getActiveRestaurants(): ReadonlyArray<AnimatedRestaurantInstance> {
+    return this.worldStreamer.getActiveRestaurants();
   }
 
   getNearestTeaShopDistance(x: number, z: number): number {
@@ -264,6 +271,10 @@ export class SceneManager {
     return this.arjunAnimator.getSnapshot();
   }
 
+  triggerArjunAction(action: ArjunContextualAction, durationSec = 1.25): void {
+    this.arjunAnimator.triggerContextualAction(action, durationSec);
+  }
+
   syncPlayerVisual(state: PlayerMoveResult, dt: number, camera?: THREE.Camera): void {
     this.arjunRig.lod.visible = true;
     this.arjunRig.lod.position.set(state.x, state.visualY, state.z);
@@ -357,6 +368,7 @@ export class SceneManager {
       focusZ,
       camera,
       callbacks?.onTeaShopSfx,
+      atm.nightGlowFactor,
     );
 
     const colliders = this.getColliders();

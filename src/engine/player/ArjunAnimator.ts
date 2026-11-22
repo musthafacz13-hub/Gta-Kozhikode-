@@ -12,6 +12,14 @@ export type ArjunAnimationState =
   | 'stop'
   | 'airborne';
 
+export type ArjunContextualAction =
+  | 'pickup_package'
+  | 'deliver_package'
+  | 'drink_tea'
+  | 'eat_snack'
+  | 'talk'
+  | 'sit';
+
 export interface SeatedVehiclePoseInput {
   category: 'car' | 'suv' | 'scooter' | 'motorcycle' | 'auto_rickshaw' | 'bus' | 'delivery' | 'truck';
   steerNorm: number;
@@ -22,6 +30,7 @@ export interface SeatedVehiclePoseInput {
 
 export interface ArjunAnimatorSnapshot {
   activeState: ArjunAnimationState | 'driving';
+  activeContextualAction: ArjunContextualAction | null;
   gaitPhase: number;
   blendWeights: {
     idle: number;
@@ -51,9 +60,21 @@ export class ArjunAnimator {
   private prevSpeed = 0;
   private smoothedTurnRate = 0;
 
+  private contextualAction: ArjunContextualAction | null = null;
+  private contextualTimer = 0;
+  private contextualDuration = 1.2;
+  private contextualWeight = 0;
+
+  triggerContextualAction(action: ArjunContextualAction, durationSec = 1.25): void {
+    this.contextualAction = action;
+    this.contextualDuration = Math.max(0.45, durationSec);
+    this.contextualTimer = this.contextualDuration;
+  }
+
   getSnapshot(): ArjunAnimatorSnapshot {
     return {
       activeState: this.activeState,
+      activeContextualAction: this.contextualAction,
       gaitPhase: this.gaitPhase,
       blendWeights: {
         idle: Number(this.idleW.toFixed(3)),
@@ -137,8 +158,20 @@ export class ArjunAnimator {
       rig.shoulderR.rotation.z = THREE.MathUtils.damp(rig.shoulderR.rotation.z, -0.16, 14, safeDt);
       rig.elbowL.rotation.x = THREE.MathUtils.damp(rig.elbowL.rotation.x, -0.45, 16, safeDt);
       rig.elbowR.rotation.x = THREE.MathUtils.damp(rig.elbowR.rotation.x, -0.45, 16, safeDt);
+      rig.setHeldActionProp('none');
       rig.contactShadow.scale.setScalar(0.8);
       return;
+    }
+
+    // Advance contextual action timer & smooth weight
+    if (this.contextualTimer > 0 && this.contextualAction) {
+      this.contextualTimer = Math.max(0, this.contextualTimer - safeDt);
+      this.contextualWeight = THREE.MathUtils.damp(this.contextualWeight, 1, 14, safeDt);
+      if (this.contextualTimer === 0) {
+        this.contextualAction = null;
+      }
+    } else {
+      this.contextualWeight = THREE.MathUtils.damp(this.contextualWeight, 0, 12, safeDt);
     }
 
     const speed = state.speed;
@@ -252,10 +285,67 @@ export class ArjunAnimator {
     const pelvisBob = -Math.abs(s2) * bounceAmp + (wIdle * breath * 0.006) - this.stopSettle * 0.025;
     const airborneLift = !isGrounded ? -0.06 : 0;
 
+    const speedFactor = THREE.MathUtils.clamp(1 - speed / 4.2, 0.2, 1);
+    const cw = this.contextualWeight * speedFactor;
+    const headLeadYaw = THREE.MathUtils.clamp(this.smoothedTurnRate * 0.075, -0.28, 0.28);
+
+    let ctxPelvisY = 0.92 + pelvisBob + airborneLift;
+    let ctxSpineX = forwardLean * 0.55;
+    let ctxChestX = forwardLean * 0.45 + wIdle * breath * 0.02;
+    let ctxHeadX = -forwardLean * 0.45 + wIdle * breath * 0.015;
+    let ctxHeadY = wIdle * idleHeadScan + headLeadYaw;
+    let ctxHipL = !isGrounded ? -0.35 : s * strideAmp;
+    let ctxHipR = !isGrounded ? 0.18 : -s * strideAmp;
+    let ctxKneeL = !isGrounded ? 0.65 : Math.max(0.04 * movingFactor, -c * kneeFlexAmp * 0.65 + kneeFlexAmp * 0.3);
+    let ctxKneeR = !isGrounded ? 0.32 : Math.max(0.04 * movingFactor, c * kneeFlexAmp * 0.65 + kneeFlexAmp * 0.3);
+    let ctxShL = -s * armSwingAmp + wIdle * idleShoulderHang;
+    let ctxShR = s * armSwingAmp + wIdle * idleShoulderHang;
+    let ctxElL = elbowBendTarget + (wIdle * idleElbowFlex) - Math.max(0, -s) * 0.16 * movingFactor;
+    let ctxElR = elbowBendTarget + (wIdle * idleElbowFlex) - Math.max(0, s) * 0.16 * movingFactor;
+
+    let desiredProp: 'none' | 'parcel' | 'chai' = 'none';
+    if (cw > 0.02 && this.contextualAction) {
+      const actionWave = Math.sin(this.idleTime * 5.2);
+      if (this.contextualAction === 'pickup_package' || this.contextualAction === 'deliver_package') {
+        desiredProp = 'parcel';
+        ctxSpineX = THREE.MathUtils.lerp(ctxSpineX, 0.14, cw);
+        ctxChestX = THREE.MathUtils.lerp(ctxChestX, 0.08, cw);
+        ctxShR = THREE.MathUtils.lerp(ctxShR, -1.06, cw);
+        ctxElR = THREE.MathUtils.lerp(ctxElR, -0.68, cw);
+        ctxShL = THREE.MathUtils.lerp(ctxShL, -0.34, cw);
+        ctxElL = THREE.MathUtils.lerp(ctxElL, -0.42, cw);
+      } else if (this.contextualAction === 'drink_tea' || this.contextualAction === 'eat_snack') {
+        desiredProp = 'chai';
+        const sipOsc = 0.5 + 0.5 * Math.sin(this.idleTime * 4.1);
+        ctxShR = THREE.MathUtils.lerp(ctxShR, -1.25 - sipOsc * 0.16, cw);
+        ctxElR = THREE.MathUtils.lerp(ctxElR, -1.68 - sipOsc * 0.18, cw);
+        ctxHeadX = THREE.MathUtils.lerp(ctxHeadX, -0.14 - sipOsc * 0.06, cw);
+      } else if (this.contextualAction === 'talk') {
+        ctxShR = THREE.MathUtils.lerp(ctxShR, -0.58 + actionWave * 0.24, cw);
+        ctxElR = THREE.MathUtils.lerp(ctxElR, -0.92 + actionWave * 0.18, cw);
+        ctxShL = THREE.MathUtils.lerp(ctxShL, -0.26 - actionWave * 0.12, cw);
+        ctxElL = THREE.MathUtils.lerp(ctxElL, -0.48, cw);
+        ctxHeadY = THREE.MathUtils.lerp(ctxHeadY, Math.sin(this.idleTime * 2.1) * 0.14, cw);
+        ctxHeadX = THREE.MathUtils.lerp(ctxHeadX, Math.sin(this.idleTime * 4.4) * 0.06, cw);
+      } else if (this.contextualAction === 'sit') {
+        ctxPelvisY = THREE.MathUtils.lerp(ctxPelvisY, 0.68, cw);
+        ctxSpineX = THREE.MathUtils.lerp(ctxSpineX, -0.05, cw);
+        ctxHipL = THREE.MathUtils.lerp(ctxHipL, -1.16, cw);
+        ctxHipR = THREE.MathUtils.lerp(ctxHipR, -1.16, cw);
+        ctxKneeL = THREE.MathUtils.lerp(ctxKneeL, 1.24, cw);
+        ctxKneeR = THREE.MathUtils.lerp(ctxKneeR, 1.24, cw);
+        ctxShL = THREE.MathUtils.lerp(ctxShL, -0.22, cw);
+        ctxShR = THREE.MathUtils.lerp(ctxShR, -0.22, cw);
+        ctxElL = THREE.MathUtils.lerp(ctxElL, -0.52, cw);
+        ctxElR = THREE.MathUtils.lerp(ctxElR, -0.52, cw);
+      }
+    }
+    rig.setHeldActionProp(desiredProp);
+
     // Pelvis height, sway, bounce & twist
     rig.pelvisGroup.position.y = THREE.MathUtils.damp(
       rig.pelvisGroup.position.y,
-      0.92 + pelvisBob + airborneLift,
+      ctxPelvisY,
       16,
       safeDt,
     );
@@ -274,11 +364,11 @@ export class ArjunAnimator {
 
     // Spine & chest counter-rotation + banking on sharp turns
     const turnBank = THREE.MathUtils.clamp(this.smoothedTurnRate * -0.042, -0.16, 0.16);
-    rig.spineGroup.rotation.x = THREE.MathUtils.damp(rig.spineGroup.rotation.x, forwardLean * 0.55, 14, safeDt);
+    rig.spineGroup.rotation.x = THREE.MathUtils.damp(rig.spineGroup.rotation.x, ctxSpineX, 14, safeDt);
     rig.spineGroup.rotation.z = THREE.MathUtils.damp(rig.spineGroup.rotation.z, turnBank, 12, safeDt);
     rig.chestGroup.rotation.x = THREE.MathUtils.damp(
       rig.chestGroup.rotation.x,
-      forwardLean * 0.45 + wIdle * breath * 0.02,
+      ctxChestX,
       14,
       safeDt,
     );
@@ -290,57 +380,46 @@ export class ArjunAnimator {
     );
 
     // Head stabilization & turn anticipation look
-    const headLeadYaw = THREE.MathUtils.clamp(this.smoothedTurnRate * 0.075, -0.28, 0.28);
     rig.headGroup.rotation.y = THREE.MathUtils.damp(
       rig.headGroup.rotation.y,
-      wIdle * idleHeadScan + headLeadYaw,
+      ctxHeadY,
       10,
       safeDt,
     );
     rig.headGroup.rotation.x = THREE.MathUtils.damp(
       rig.headGroup.rotation.x,
-      -forwardLean * 0.45 + wIdle * breath * 0.015,
+      ctxHeadX,
       12,
       safeDt,
     );
 
     // Left & Right Legs (Hip + Knee + Ankle plantar/dorsiflexion)
-    const hipLTarget = !isGrounded ? -0.35 : s * strideAmp;
-    const hipRTarget = !isGrounded ? 0.18 : -s * strideAmp;
-    const kneeLTarget = !isGrounded ? 0.65 : Math.max(0.04 * movingFactor, -c * kneeFlexAmp * 0.65 + kneeFlexAmp * 0.3);
-    const kneeRTarget = !isGrounded ? 0.32 : Math.max(0.04 * movingFactor, c * kneeFlexAmp * 0.65 + kneeFlexAmp * 0.3);
-
-    rig.hipL.rotation.x = THREE.MathUtils.damp(rig.hipL.rotation.x, hipLTarget, 18, safeDt);
-    rig.hipR.rotation.x = THREE.MathUtils.damp(rig.hipR.rotation.x, hipRTarget, 18, safeDt);
-    rig.kneeL.rotation.x = THREE.MathUtils.damp(rig.kneeL.rotation.x, kneeLTarget, 18, safeDt);
-    rig.kneeR.rotation.x = THREE.MathUtils.damp(rig.kneeR.rotation.x, kneeRTarget, 18, safeDt);
+    rig.hipL.rotation.x = THREE.MathUtils.damp(rig.hipL.rotation.x, ctxHipL, 18, safeDt);
+    rig.hipR.rotation.x = THREE.MathUtils.damp(rig.hipR.rotation.x, ctxHipR, 18, safeDt);
+    rig.kneeL.rotation.x = THREE.MathUtils.damp(rig.kneeL.rotation.x, ctxKneeL, 18, safeDt);
+    rig.kneeR.rotation.x = THREE.MathUtils.damp(rig.kneeR.rotation.x, ctxKneeR, 18, safeDt);
 
     rig.ankleL.rotation.x = THREE.MathUtils.damp(
       rig.ankleL.rotation.x,
-      movingFactor * (-hipLTarget * 0.32),
+      movingFactor * (-ctxHipL * 0.32),
       16,
       safeDt,
     );
     rig.ankleR.rotation.x = THREE.MathUtils.damp(
       rig.ankleR.rotation.x,
-      movingFactor * (-hipRTarget * 0.32),
+      movingFactor * (-ctxHipR * 0.32),
       16,
       safeDt,
     );
 
-    // Left & Right Arms (counter-swing + natural relaxed shoulder abduction)
-    const shLTarget = -s * armSwingAmp + wIdle * idleShoulderHang;
-    const shRTarget = s * armSwingAmp + wIdle * idleShoulderHang;
-
-    rig.shoulderL.rotation.x = THREE.MathUtils.damp(rig.shoulderL.rotation.x, shLTarget, 17, safeDt);
-    rig.shoulderR.rotation.x = THREE.MathUtils.damp(rig.shoulderR.rotation.x, shRTarget, 17, safeDt);
+    // Left & Right Arms (counter-swing + natural relaxed shoulder abduction + contextual pose)
+    rig.shoulderL.rotation.x = THREE.MathUtils.damp(rig.shoulderL.rotation.x, ctxShL, 17, safeDt);
+    rig.shoulderR.rotation.x = THREE.MathUtils.damp(rig.shoulderR.rotation.x, ctxShR, 17, safeDt);
     rig.shoulderL.rotation.z = THREE.MathUtils.damp(rig.shoulderL.rotation.z, 0.08 + 0.04 * wSprint, 12, safeDt);
     rig.shoulderR.rotation.z = THREE.MathUtils.damp(rig.shoulderR.rotation.z, -0.08 - 0.04 * wSprint, 12, safeDt);
 
-    const elLTarget = elbowBendTarget + (wIdle * idleElbowFlex) - Math.max(0, -s) * 0.16 * movingFactor;
-    const elRTarget = elbowBendTarget + (wIdle * idleElbowFlex) - Math.max(0, s) * 0.16 * movingFactor;
-    rig.elbowL.rotation.x = THREE.MathUtils.damp(rig.elbowL.rotation.x, elLTarget, 16, safeDt);
-    rig.elbowR.rotation.x = THREE.MathUtils.damp(rig.elbowR.rotation.x, elRTarget, 16, safeDt);
+    rig.elbowL.rotation.x = THREE.MathUtils.damp(rig.elbowL.rotation.x, ctxElL, 16, safeDt);
+    rig.elbowR.rotation.x = THREE.MathUtils.damp(rig.elbowR.rotation.x, ctxElR, 16, safeDt);
 
     // Keep contact shadow anchored under Arjun even during brief jumps
     const jumpHeightOffset = Math.max(0, state.y - state.visualY);

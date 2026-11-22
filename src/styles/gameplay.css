@@ -1,0 +1,156 @@
+/* Gameplay HUD Surface & Component Styles */
+
+.kl-hud-card {
+  background: linear-gradient(155deg, rgba(11, 20, 32, 0.9), rgba(7, 13, 22, 0.88));
+  border: 1px solid var(--kl-border-subtle);
+  border-radius: var(--kl-radius-md);
+  box-shadow: var(--kl-shadow-sm);
+}
+
+.kl-hud-card--brass {
+  border-color: var(--kl-border-brass);
+  background: linear-gradient(155deg, rgba(31, 22, 11, 0.92), rgba(14, 15, 22, 0.9));
+}
+
+.kl-hud-card--emerald {
+  border-color: var(--kl-border-emerald);
+  background: linear-gradient(155deg, rgba(10, 30, 26, 0.92), rgba(8, 17, 24, 0.9));
+}
+
+.kl-hud-card--coastal {
+  border-color: rgba(56, 189, 248, 0.34);
+  background: linear-gradient(155deg, rgba(11, 28, 43, 0.92), rgba(8, 15, 24, 0.9));
+}
+
+.kl-hud-eyebrow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--kl-ink-muted);
+}
+
+.kl-hud-wallet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 112px;
+  padding: 6px 11px;
+  border-radius: var(--kl-radius-md);
+  border: 1px solid var(--kl-border-emerald);
+  background: linear-gradient(160deg, rgba(12, 33, 27, 0.94), rgba(8, 17, 25, 0.92));
+  box-shadow: var(--kl-shadow-sm);
+}
+
+.kl-hud-wallet-amount {
+  font-family: var(--kl-font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: #6ee7b7;
+  line-height: 1.15;
+}
+
+.kl-hud-wallet-meta {
+  font-size: 9px;
+  font-weight: 600;
+  color: #fcd34d;
+  letter-spacing: 0.04em;
+}
+
+.kl-hud-order-card {
+  width: min(296px, 76vw);
+  border-radius: var(--kl-radius-md);
+  border: 1px solid var(--kl-border-brass);
+  background: linear-gradient(160deg, rgba(25, 19, 12, 0.93), rgba(10, 17, 27, 0.93));
+  padding: 9px 11px;
+  box-shadow: var(--kl-shadow-md);
+}
+
+.kl-hud-progress-track {
+  height: 5px;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+
+.kl-hud-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 180ms linear, background-color 220ms ease;
+}
+
+.kl-hud-minimap-frame {
+  position: relative;
+  border-radius: var(--kl-radius-lg);
+  border: 1px solid var(--kl-border-medium);
+  background: rgba(7, 13, 22, 0.94);
+  box-shadow: var(--kl-shadow-md);
+  overflow: hidden;
+}
+
+.kl-hud-minimap-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.kl-hud-notice-banner {
+  position: absolute;
+  left: 50%;
+  top: 76px;
+  z-index: var(--kl-z-toast);
+  max-width: min(420px, 88vw);
+  border-radius: var(--kl-radius-md);
+  border: 1px solid var(--kl-border-brass);
+  background: linear-gradient(155deg, rgba(22, 18, 12, 0.95), rgba(10, 17, 27, 0.95));
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kl-ink-warm);
+  box-shadow: var(--kl-shadow-md);
+  pointer-events: none;
+}
+
+.kl-hud-context-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--kl-radius-md);
+  padding: 10px 14px;
+  box-shadow: var(--kl-shadow-md);
+  color: var(--kl-ink-primary);
+}
+
+.kl-hud-context-btn--tea {
+  border: 1px solid rgba(251, 191, 36, 0.52);
+  background: linear-gradient(150deg, rgba(92, 45, 12, 0.95), rgba(34, 19, 9, 0.95));
+}
+
+.kl-hud-context-btn--deliver {
+  border: 1px solid rgba(52, 211, 153, 0.55);
+  background: linear-gradient(150deg, rgba(6, 78, 59, 0.95), rgba(6, 40, 34, 0.95));
+}
+
+.kl-hud-context-btn--vehicle {
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: linear-gradient(150deg, rgba(12, 54, 82, 0.95), rgba(8, 25, 42, 0.95));
+}
+
+.kl-hud-context-btn--default {
+  border: 1px solid rgba(251, 191, 36, 0.42);
+  background: linear-gradient(150deg, rgba(22, 34, 49, 0.95), rgba(11, 18, 29, 0.95));
+}
+
+.kl-speedo-cluster {
+  border-radius: var(--kl-radius-md);
+  border: 1px solid var(--kl-border-medium);
+  background: linear-gradient(160deg, rgba(10, 19, 30, 0.92), rgba(7, 13, 21, 0.92));
+  padding: 8px 12px;
+  box-shadow: var(--kl-shadow-md);
+}

@@ -1,0 +1,64 @@
+/* Title Screen, Modals & Responsive Breakpoints */
+
+.kl-title-backdrop {
+  background:
+    radial-gradient(circle at 72% 28%, rgba(229, 169, 60, 0.2), transparent 52%),
+    linear-gradient(105deg, rgba(6, 12, 19, 0.94) 0%, rgba(7, 14, 22, 0.78) 44%, rgba(6, 12, 19, 0.32) 100%);
+}
+
+.kl-title-card {
+  border: 1px solid var(--kl-border-medium);
+  border-radius: var(--kl-radius-xl);
+  background: linear-gradient(165deg, rgba(12, 22, 34, 0.94), rgba(7, 13, 21, 0.96));
+  box-shadow: var(--kl-shadow-lg);
+}
+
+.kl-audio-drawer {
+  border: 1px solid var(--kl-border-subtle);
+  border-radius: var(--kl-radius-md);
+  background: linear-gradient(155deg, rgba(12, 22, 34, 0.92), rgba(7, 13, 21, 0.94));
+  box-shadow: var(--kl-shadow-md);
+}
+
+/* Mobile landscape & compact screens (< 560px height or <= 768px width) */
+@media (max-height: 540px) and (orientation: landscape) {
+  .kl-hud-order-card {
+    width: min(244px, 56vw);
+    padding: 7px 9px;
+  }
+
+  .kl-hud-notice-banner {
+    top: 56px;
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+
+  .kl-modal-shell {
+    max-height: 94vh;
+    border-radius: var(--kl-radius-lg);
+  }
+
+  .kl-title-card {
+    padding: 1rem 1.25rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .kl-order-stepper {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .kl-hud-wallet {
+    min-width: 96px;
+    padding: 5px 9px;
+  }
+}
+
+@supports (padding: max(0px)) {
+  .kl-safe-pad {
+    padding-left: max(0.65rem, env(safe-area-inset-left));
+    padding-right: max(0.65rem, env(safe-area-inset-right));
+    padding-bottom: max(0.65rem, env(safe-area-inset-bottom));
+  }
+}

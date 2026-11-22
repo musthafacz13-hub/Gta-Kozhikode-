@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#goldGrad)" stroke-width="12" opacity="0.4" />
+  <path d="M256 380 L256 220 M256 220 Q220 180 180 190 M256 220 Q290 170 330 185 M256 200 Q256 150 220 130 M256 200 Q270 140 310 135" stroke="#f59e0b" stroke-width="16" stroke-linecap="round" fill="none" />
+  <path d="M170 340 L210 300 L300 300 L340 340 Z" fill="#fbbf24" />
+  <circle cx="200" cy="350" r="28" fill="#334155" stroke="#fbbf24" stroke-width="8" />
+  <circle cx="310" cy="350" r="28" fill="#334155" stroke="#fbbf24" stroke-width="8" />
+  <text x="256" y="440" font-family="system-ui, sans-serif" font-weight="700" font-size="36" fill="#fef3c7" text-anchor="middle" letter-spacing="2">KOZHIKODE LIFE</text>
+</svg>

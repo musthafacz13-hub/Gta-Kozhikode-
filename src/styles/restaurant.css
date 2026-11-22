@@ -1,0 +1,123 @@
+/* Kozhikode Food Delivery Hub, Restaurant Directory & Lifestyle Modal Styling */
+
+.kl-modal-backdrop {
+  background: var(--kl-surface-overlay);
+}
+
+.kl-modal-shell {
+  border: 1px solid var(--kl-border-medium);
+  border-radius: var(--kl-radius-xl);
+  background: linear-gradient(165deg, rgba(13, 23, 35, 0.97), rgba(8, 15, 24, 0.98));
+  box-shadow: var(--kl-shadow-lg);
+}
+
+.kl-hub-header {
+  border-bottom: 1px solid var(--kl-border-subtle);
+  background: linear-gradient(90deg, rgba(15, 118, 110, 0.14), rgba(180, 83, 9, 0.08) 55%, rgba(15, 23, 42, 0.2));
+}
+
+.kl-tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--kl-border-subtle);
+  background: rgba(7, 13, 22, 0.45);
+}
+
+.kl-tab-btn {
+  border-radius: var(--kl-radius-sm);
+  border: 1px solid var(--kl-border-subtle);
+  background: rgba(15, 26, 39, 0.72);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--kl-ink-secondary);
+  transition:
+    background-color var(--kl-dur-fast) ease,
+    border-color var(--kl-dur-fast) ease,
+    color var(--kl-dur-fast) ease,
+    transform var(--kl-dur-fast) var(--kl-ease-spring);
+}
+
+.kl-tab-btn:hover {
+  border-color: var(--kl-border-medium);
+  color: var(--kl-ink-primary);
+}
+
+.kl-tab-btn--active {
+  border-color: var(--kl-border-brass);
+  background: linear-gradient(155deg, rgba(180, 83, 9, 0.34), rgba(120, 53, 15, 0.24));
+  color: var(--kl-ink-warm);
+}
+
+.kl-restaurant-card {
+  position: relative;
+  border-radius: var(--kl-radius-md);
+  border: 1px solid var(--kl-border-subtle);
+  background: linear-gradient(160deg, rgba(16, 28, 42, 0.9), rgba(10, 18, 29, 0.92));
+  padding: 13px;
+  transition:
+    transform var(--kl-dur-fast) var(--kl-ease-out),
+    border-color var(--kl-dur-fast) ease,
+    box-shadow var(--kl-dur-fast) ease;
+}
+
+.kl-restaurant-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--kl-border-brass);
+  box-shadow: 0 10px 24px rgba(2, 6, 14, 0.36);
+}
+
+.kl-category-accent--biryani_shop {
+  border-left: 3px solid #f59e0b;
+}
+
+.kl-category-accent--malabar_restaurant {
+  border-left: 3px solid #10b981;
+}
+
+.kl-category-accent--tea_shop {
+  border-left: 3px solid #ea580c;
+}
+
+.kl-category-accent--bakery {
+  border-left: 3px solid #f472b6;
+}
+
+.kl-category-accent--fast_food {
+  border-left: 3px solid #38bdf8;
+}
+
+.kl-order-stepper {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kl-order-step {
+  border-radius: var(--kl-radius-sm);
+  border: 1px solid var(--kl-border-subtle);
+  background: rgba(10, 18, 28, 0.72);
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--kl-ink-muted);
+}
+
+.kl-order-step--done {
+  border-color: var(--kl-border-emerald);
+  background: rgba(16, 185, 129, 0.14);
+  color: #a7f3d0;
+}
+
+.kl-order-step--active {
+  border-color: var(--kl-border-brass);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fef3c7;
+}
+
+.kl-review-quote {
+  border-left: 2px solid var(--kl-accent-emerald);
+  background: rgba(16, 185, 129, 0.08);
+  padding: 5px 10px;
+  border-radius: 0 var(--kl-radius-sm) var(--kl-radius-sm) 0;
+}

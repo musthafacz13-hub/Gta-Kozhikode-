@@ -23,7 +23,7 @@ export function BottomAudioPanel({
     <div
       data-hud-control="true"
       onPointerDown={(e) => e.stopPropagation()}
-      className="pointer-events-auto w-[min(21rem,calc(100vw-2rem))] rounded-2xl border border-white/20 bg-slate-950/92 p-4 text-slate-100 shadow-2xl"
+      className="kl-audio-drawer kl-anim-card pointer-events-auto w-[min(21rem,calc(100vw-2rem))] p-4 text-slate-100"
     >
       <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
         <div className="flex items-center gap-2">
@@ -32,7 +32,7 @@ export function BottomAudioPanel({
             data-hud-control="true"
             onClick={onToggleMute}
             aria-label={settings.masterMuted ? 'Unmute Audio' : 'Mute Audio'}
-            className={`flex h-11 w-11 items-center justify-center rounded-xl border transition-colors ${
+            className={`kl-btn-tactile flex h-11 w-11 items-center justify-center rounded-xl border ${
               settings.masterMuted
                 ? 'border-rose-400/50 bg-rose-500/20 text-rose-300'
                 : 'border-amber-400/50 bg-amber-500/20 text-amber-300'
@@ -44,7 +44,7 @@ export function BottomAudioPanel({
             <div className="text-xs font-bold uppercase tracking-wider text-white">
               Sound &amp; Music
             </div>
-            <div className="font-mono-tabular text-[11px] text-slate-300">
+            <div className="kl-tabular font-mono-tabular text-[11px] text-slate-300">
               {settings.masterMuted ? 'Muted' : `Master ${effectiveMaster}%`}
             </div>
           </div>
@@ -55,7 +55,7 @@ export function BottomAudioPanel({
           data-hud-control="true"
           onClick={onClose}
           aria-label="Close Sound Panel"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-slate-900 text-slate-200 hover:bg-slate-800"
+          className="kl-btn-tactile flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-slate-900 text-slate-200 hover:bg-slate-800"
         >
           <X className="h-4 w-4" />
         </button>

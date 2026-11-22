@@ -1196,20 +1196,20 @@ export function WorldMapModal({
     <div
       role="dialog"
       aria-label="Kozhikode Interactive World Map"
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/90 p-2 sm:p-4"
+      className="kl-modal-backdrop fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-4"
     >
-      <div className="flex h-full max-h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-slate-900 shadow-2xl">
+      <div className="kl-modal-shell kl-anim-modal flex h-full max-h-[94dvh] w-full max-w-6xl flex-col overflow-hidden">
         {/* Header Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/90 px-3 py-2.5 sm:px-5">
+        <div className="kl-hub-header flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
               <Globe className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="font-display text-base font-bold tracking-wide text-white sm:text-lg">
+              <h2 className="kl-display font-display text-base font-bold tracking-wide text-white sm:text-lg">
                 KOZHIKODE DISTRICT WORLD MAP
               </h2>
-              <p className="font-mono-tabular text-[11px] text-slate-400">
+              <p className="kl-tabular font-mono-tabular text-[11px] text-slate-400">
                 {snapshot.districtName} · {snapshot.talukName} · {snapshot.playerLat.toFixed(4)}°N,{' '}
                 {snapshot.playerLon.toFixed(4)}°E
               </p>
@@ -1225,7 +1225,7 @@ export function WorldMapModal({
                   onClose();
                   onOpenDeliveryBoard();
                 }}
-                className="flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25"
+                className="kl-btn-tactile flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25"
               >
                 <UtensilsCrossed className="h-3.5 w-3.5" />
                 <span>Orders</span>
@@ -1237,7 +1237,7 @@ export function WorldMapModal({
                 onUiClick();
                 setActiveTab('district_vector');
               }}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+              className={`kl-btn-tactile rounded-lg px-3 py-1.5 text-xs font-bold ${
                 activeTab === 'district_vector'
                   ? 'bg-amber-500 text-slate-950'
                   : 'border border-white/15 bg-slate-900 text-slate-200 hover:bg-slate-800'
@@ -1251,7 +1251,7 @@ export function WorldMapModal({
                 onUiClick();
                 setActiveTab('google_maps');
               }}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+              className={`kl-btn-tactile rounded-lg px-3 py-1.5 text-xs font-bold ${
                 activeTab === 'google_maps'
                   ? 'bg-sky-400 text-slate-950'
                   : 'border border-white/15 bg-slate-900 text-slate-200 hover:bg-slate-800'
@@ -1266,7 +1266,7 @@ export function WorldMapModal({
                 onClose();
               }}
               aria-label="Close World Map"
-              className="ml-1 flex h-9 w-9 items-center justify-center rounded-lg border border-white/20 bg-slate-800 text-slate-200 hover:bg-slate-700"
+              className="kl-btn-tactile ml-1 flex h-9 w-9 items-center justify-center rounded-lg border border-white/20 bg-slate-800 text-slate-200 hover:bg-slate-700"
             >
               <X className="h-4 w-4" />
             </button>

@@ -33,6 +33,7 @@ export class AtmosphereSystem {
     sunDir: { value: THREE.Vector3 };
     sunColor: { value: THREE.Color };
     nightAmount: { value: number };
+    uCloudTime: { value: number };
   };
 
   private readonly mistMat: THREE.MeshBasicMaterial;
@@ -51,6 +52,7 @@ export class AtmosphereSystem {
       sunDir: { value: new THREE.Vector3(-0.68, 0.26, -0.68).normalize() },
       sunColor: { value: new THREE.Color(0xffdca3) },
       nightAmount: { value: 0 },
+      uCloudTime: { value: 0 },
     };
 
     const skyGeo = new THREE.SphereGeometry(520, 32, 20);
@@ -75,11 +77,37 @@ export class AtmosphereSystem {
         uniform vec3 sunDir;
         uniform vec3 sunColor;
         uniform float nightAmount;
+        uniform float uCloudTime;
 
         float hash31(vec3 p) {
           p = fract(p * 0.1031);
           p += dot(p, p.yzx + 33.33);
           return fract((p.x + p.y) * p.z);
+        }
+
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+
+        float valueNoise(vec2 uv) {
+          vec2 i = floor(uv);
+          vec2 f = fract(uv);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          float a = hash21(i);
+          float b = hash21(i + vec2(1.0, 0.0));
+          float c = hash21(i + vec2(0.0, 1.0));
+          float d = hash21(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        }
+
+        float fbmClouds(vec2 uv) {
+          float sum = 0.0;
+          sum += 0.55 * valueNoise(uv);
+          sum += 0.30 * valueNoise(uv * 2.07 + 13.1);
+          sum += 0.15 * valueNoise(uv * 4.13 + 7.7);
+          return sum;
         }
 
         void main() {
@@ -90,6 +118,16 @@ export class AtmosphereSystem {
 
           float sunAmt = max(dot(dir, sunDir), 0.0);
           col += sunColor * (pow(sunAmt, 10.0) * 0.36 + pow(sunAmt, 220.0) * 1.1);
+
+          // Drifting Kerala coastal cumulus clouds
+          if (h > 0.04) {
+            vec2 cloudUv = dir.xz / (h + 0.18) * 1.45 + vec2(uCloudTime * 0.012, uCloudTime * 0.004);
+            float n = fbmClouds(cloudUv);
+            float cloudMask = smoothstep(0.56, 0.82, n) * smoothstep(0.04, 0.22, h) * (1.0 - smoothstep(0.75, 0.98, h));
+            vec3 cloudTint = mix(vec3(0.98, 0.96, 0.93), sunColor * 1.05, 0.35 + pow(sunAmt, 4.0) * 0.4);
+            cloudTint = mix(cloudTint, vec3(0.14, 0.2, 0.32), nightAmount * 0.86);
+            col = mix(col, cloudTint, cloudMask * mix(0.62, 0.22, nightAmount));
+          }
 
           // Subtle Malabar twilight & night starfield
           if (nightAmount > 0.05 && h > 0.08) {
@@ -210,6 +248,7 @@ export class AtmosphereSystem {
     focusZ: number,
     preset: GraphicsPresetProfile,
   ): void {
+    this.skyUniforms.uCloudTime.value += Math.max(0, dt);
     if (this.preset === 'cycle') {
       // 1 full day every ~6 real-time minutes when cycle mode is active
       this.hours = (this.hours + dt * (24 / 360)) % 24;

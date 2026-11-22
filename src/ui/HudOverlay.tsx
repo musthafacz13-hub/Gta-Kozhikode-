@@ -654,10 +654,8 @@ export function HudOverlay({
           width: `${joystickDiameter}px`,
           height: `${joystickDiameter}px`,
         }}
-        className={`pointer-events-auto relative flex touch-none select-none items-center justify-center rounded-full border transition-colors ${
-          joystickActive
-            ? 'border-amber-400/75 bg-slate-950/70'
-            : 'border-white/25 bg-slate-950/50'
+        className={`kl-joystick-ring pointer-events-auto relative flex touch-none select-none items-center justify-center transition-colors ${
+          joystickActive ? 'kl-joystick-ring--active' : ''
         }`}
       >
         <div
@@ -671,11 +669,7 @@ export function HudOverlay({
             height: `${knobDiameter}px`,
             transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
           }}
-          className={`pointer-events-none rounded-full border shadow-md transition-colors ${
-            joystickActive
-              ? 'border-amber-300/80 bg-amber-400/45'
-              : 'border-white/45 bg-white/30'
-          }`}
+          className="kl-joystick-knob pointer-events-none"
         />
       </div>
     </div>
@@ -706,7 +700,16 @@ export function HudOverlay({
             style={{
               minHeight: `${actionBtnPx}px`,
             }}
-            className="flex items-center gap-1.5 rounded-full border border-emerald-300/80 bg-emerald-500 px-3 text-xs font-bold text-slate-950 shadow-lg transition-transform active:scale-95"
+            className={`kl-hud-context-btn kl-btn-tactile text-xs font-bold ${
+              resolvedInteraction.kind === 'drink_tea'
+                ? 'kl-hud-context-btn--tea'
+                : resolvedInteraction.kind === 'collect_order' ||
+                    resolvedInteraction.kind === 'deliver_order'
+                  ? 'kl-hud-context-btn--deliver'
+                  : resolvedInteraction.kind === 'enter_vehicle'
+                    ? 'kl-hud-context-btn--vehicle'
+                    : 'kl-hud-context-btn--default'
+            }`}
           >
             {renderInteractionIcon(resolvedInteraction.kind)}
             <span>{resolvedInteraction.actionLabel}</span>
@@ -775,12 +778,12 @@ export function HudOverlay({
             width: `${actionBtnPx}px`,
             height: `${actionBtnPx}px`,
           }}
-          className={`flex touch-none select-none items-center justify-center rounded-full border shadow-lg transition-transform active:scale-90 ${
+          className={`kl-control-pad kl-control-pad--jump ${
             isAirborne
-              ? 'border-white/15 bg-slate-900/60 text-slate-500'
+              ? 'opacity-50'
               : jumpPressed
-                ? 'border-sky-300 bg-sky-400 text-slate-950 scale-95'
-                : 'border-white/25 bg-slate-950/85 text-slate-100 hover:bg-slate-800'
+                ? 'kl-control-pad--pressed border-sky-300 text-sky-200'
+                : 'text-slate-100'
           }`}
         >
           <ArrowUp className="h-5 w-5" strokeWidth={2.4} />
@@ -819,10 +822,8 @@ export function HudOverlay({
             width: `${primaryBtnPx}px`,
             height: `${primaryBtnPx}px`,
           }}
-          className={`flex touch-none select-none items-center justify-center rounded-full border shadow-lg transition-transform active:scale-90 ${
-            snapshot.isSprinting
-              ? 'border-amber-300 bg-amber-500 text-slate-950 scale-95'
-              : 'border-amber-400/60 bg-slate-950/85 text-amber-400'
+          className={`kl-control-pad kl-control-pad--sprint ${
+            snapshot.isSprinting ? 'kl-control-pad--pressed' : 'text-amber-300'
           }`}
         >
           <Zap className="h-5 w-5" strokeWidth={2.2} />
@@ -877,10 +878,8 @@ export function HudOverlay({
           width: `${steerPadWidth}px`,
           height: `${steerPadHeight}px`,
         }}
-        className={`pointer-events-auto relative flex touch-none select-none items-center justify-between rounded-full border px-3 transition-colors ${
-          steerActive
-            ? 'border-amber-400/80 bg-slate-950/75'
-            : 'border-white/25 bg-slate-950/55'
+        className={`kl-steer-track pointer-events-auto relative flex touch-none select-none items-center justify-between px-3 transition-colors ${
+          steerActive ? 'border-amber-400/80' : ''
         }`}
       >
         <span className="pointer-events-none text-[10px] font-bold tracking-wider text-slate-400">L</span>
@@ -890,11 +889,7 @@ export function HudOverlay({
             height: `${Math.round(steerPadHeight * 0.68)}px`,
             transform: `translate3d(${steerKnobX}px, 0, 0)`,
           }}
-          className={`pointer-events-none rounded-full border shadow-md transition-colors ${
-            steerActive
-              ? 'border-amber-300/85 bg-amber-400/50'
-              : 'border-white/45 bg-white/30'
-          }`}
+          className="kl-steer-knob pointer-events-none"
         />
         <span className="pointer-events-none text-[10px] font-bold tracking-wider text-slate-400">R</span>
       </div>
@@ -1044,14 +1039,10 @@ export function HudOverlay({
             width: `${actionBtnPx}px`,
             height: `${primaryBtnPx}px`,
           }}
-          className={`flex touch-none select-none flex-col items-center justify-center rounded-2xl border shadow-lg transition-transform active:scale-95 ${
-            brakePressed
-              ? 'border-rose-300 bg-rose-500 text-slate-950 scale-95'
-              : 'border-rose-400/50 bg-slate-950/88 text-rose-300'
-          }`}
+          className={`kl-pedal kl-pedal--brake ${brakePressed ? 'kl-pedal--pressed' : ''}`}
         >
           <ArrowDown className="h-4 w-4" strokeWidth={2.4} />
-          <span className="font-mono-tabular text-[9px] font-bold">REV</span>
+          <span className="kl-tabular font-mono-tabular text-[9px] font-bold">REV</span>
         </button>
 
         <button
@@ -1087,14 +1078,10 @@ export function HudOverlay({
             width: `${primaryBtnPx}px`,
             height: `${Math.round(primaryBtnPx * 1.15)}px`,
           }}
-          className={`flex touch-none select-none flex-col items-center justify-center rounded-2xl border shadow-lg transition-transform active:scale-95 ${
-            gasPressed
-              ? 'border-emerald-300 bg-emerald-400 text-slate-950 scale-95'
-              : 'border-emerald-400/60 bg-slate-950/88 text-emerald-300'
-          }`}
+          className={`kl-pedal kl-pedal--gas ${gasPressed ? 'kl-pedal--pressed' : ''}`}
         >
           <Gauge className="h-5 w-5" strokeWidth={2.2} />
-          <span className="font-mono-tabular text-[9px] font-bold">GAS</span>
+          <span className="kl-tabular font-mono-tabular text-[9px] font-bold">GAS</span>
         </button>
       </div>
     </div>
@@ -1102,7 +1089,7 @@ export function HudOverlay({
 
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4"
+      className="kl-safe-pad pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4"
       style={{
         opacity: snapshot.settings.hudOpacity,
         paddingTop: 'max(0.625rem, env(safe-area-inset-top))',
@@ -1132,7 +1119,7 @@ export function HudOverlay({
       )}
 
       {/* TOP HUD PERIMETER */}
-      <div className="relative z-10 flex items-start justify-between gap-2">
+      <div className="kl-anim-hud-top relative z-10 flex items-start justify-between gap-2">
         {/* Top-Left: Circular Minimap + Real Time, Weather, District Location & Home Marker */}
         <div className="flex items-start gap-2.5">
           <button
@@ -1144,7 +1131,7 @@ export function HudOverlay({
             }}
             aria-label="Open Minimap World View"
             title="Tap to open Kozhikode Interactive World Map (M)"
-            className="pointer-events-auto relative h-[78px] w-[78px] shrink-0 overflow-hidden rounded-full border-2 border-white/35 bg-slate-950/90 shadow-xl transition-transform hover:border-amber-400/75 active:scale-95 sm:h-24 sm:w-24"
+            className="kl-hud-minimap-frame kl-btn-tactile pointer-events-auto relative h-[78px] w-[78px] shrink-0 !rounded-full border-2 border-white/35 hover:border-amber-400/75 sm:h-24 sm:w-24"
           >
             <canvas ref={minimapRef} width={96} height={96} className="h-full w-full" />
 
@@ -1169,8 +1156,8 @@ export function HudOverlay({
 
           {/* Clean Top-Left Telemetry: Time, Weather, Location, Home Distance */}
           <div className="flex flex-col items-start gap-1">
-            <div className="rounded-xl border border-white/15 bg-slate-950/85 px-2.5 py-1.5 shadow-lg">
-              <div className="flex items-center gap-2 font-mono-tabular text-xs font-semibold text-white">
+            <div className="kl-hud-card kl-hud-card--brass px-2.5 py-1.5">
+              <div className="kl-tabular flex items-center gap-2 font-mono-tabular text-xs font-semibold text-white">
                 <span>{snapshot.clockFormatted}</span>
                 <span className="text-slate-500">·</span>
                 <span className="flex items-center gap-1 text-[11px] font-medium text-amber-200">
@@ -1199,14 +1186,14 @@ export function HudOverlay({
                   );
                 }}
                 aria-label="Home Location Status"
-                className={`flex min-h-[30px] items-center gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] font-semibold shadow-md transition-colors ${
+                className={`kl-btn-tactile flex min-h-[30px] items-center gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] font-semibold shadow-md ${
                   snapshot.nearHome
                     ? 'border-emerald-300/70 bg-emerald-500/25 text-emerald-100'
-                    : 'border-white/20 bg-slate-950/85 text-slate-100 hover:bg-slate-900'
+                    : 'kl-hud-card text-slate-100'
                 }`}
               >
                 <Home className="h-3 w-3 text-emerald-400" strokeWidth={2.2} />
-                <span className="font-mono-tabular">
+                <span className="kl-tabular font-mono-tabular">
                   {snapshot.nearHome ? 'Home' : `${snapshot.homeDistanceMeters}m`}
                 </span>
               </button>
@@ -1219,17 +1206,24 @@ export function HudOverlay({
                   onOpenDeliveryBoard?.();
                 }}
                 aria-label="Wallet and Reputation"
-                className="flex min-h-[30px] items-center gap-1 rounded-lg border border-emerald-400/45 bg-slate-950/90 px-2 py-0.5 font-mono-tabular text-[11px] font-bold text-emerald-300 shadow-md hover:bg-slate-900"
+                className="kl-hud-wallet kl-btn-tactile"
               >
-                <Wallet className="h-3 w-3 shrink-0" />
-                <span>₹{snapshot.progression?.walletBalanceInr ?? 250}</span>
+                <div className="flex items-center gap-1">
+                  <Wallet className="h-3 w-3 shrink-0 text-emerald-300" />
+                  <span className="kl-hud-wallet-amount kl-tabular">
+                    ₹{snapshot.progression?.walletBalanceInr ?? 250}
+                  </span>
+                </div>
+                <span className="kl-hud-wallet-meta">
+                  {snapshot.progression?.reputationTier ?? 'Newcomer'}
+                </span>
               </button>
 
               {snapshot.activeDestination && (
-                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-slate-950/90 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 shadow-lg">
+                <div className="kl-hud-card kl-hud-card--emerald flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold text-emerald-200">
                   <Navigation className="h-3 w-3 shrink-0 text-emerald-400" />
                   <span className="max-w-[110px] truncate">{snapshot.activeDestination.name}</span>
-                  <span className="font-mono-tabular text-amber-300">
+                  <span className="kl-tabular font-mono-tabular text-amber-300">
                     {snapshot.activeDestination.realDistanceKm} km
                   </span>
                   <button
@@ -1248,49 +1242,80 @@ export function HudOverlay({
             {snapshot.delivery?.activeOrder && (
               <div
                 aria-label="Active Delivery Tracker"
-                className="pointer-events-auto flex max-w-[270px] flex-wrap items-center gap-1.5 rounded-xl border border-amber-400/50 bg-slate-950/90 px-2.5 py-1 text-[11px] text-amber-100 shadow-lg"
+                className="kl-hud-order-card kl-anim-card pointer-events-auto space-y-1.5 text-[11px] text-amber-100"
               >
-                <Package className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                <span className="max-w-[140px] truncate font-semibold text-white">
-                  {snapshot.delivery.activeOrder.status === 'picked_up' ||
-                  snapshot.delivery.activeOrder.status === 'in_transit'
-                    ? `Deliver → ${snapshot.delivery.activeOrder.customerPlaceLabel}`
-                    : `Pickup → ${snapshot.delivery.activeOrder.restaurantName}`}
-                </span>
-                <span className="font-mono-tabular text-amber-300">
-                  {snapshot.delivery.activeOrder.status === 'preparing' ||
-                  snapshot.delivery.activeOrder.status === 'accepted'
-                    ? `${Math.ceil(snapshot.delivery.activeOrder.prepRemainingSec)}s`
-                    : snapshot.delivery.activeOrder.status === 'ready_for_pickup'
-                      ? `${snapshot.delivery.pickupDistanceMeters ?? 0}m`
-                      : `${Math.round(snapshot.delivery.activeOrder.packageState.foodCondition)}% · ${snapshot.delivery.dropoffDistanceMeters ?? 0}m`}
-                </span>
-                {snapshot.delivery.canCollectNearby && (
-                  <button
-                    type="button"
-                    data-hud-control="true"
-                    onClick={() => {
-                      onUiClick();
-                      onPickupOrder?.();
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Package className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <span className="max-w-[140px] truncate font-semibold text-white">
+                    {snapshot.delivery.activeOrder.status === 'picked_up' ||
+                    snapshot.delivery.activeOrder.status === 'in_transit'
+                      ? `Deliver → ${snapshot.delivery.activeOrder.customerPlaceLabel}`
+                      : `Pickup → ${snapshot.delivery.activeOrder.restaurantName}`}
+                  </span>
+                  <span className="kl-tabular ml-auto font-mono-tabular text-amber-300">
+                    {snapshot.delivery.activeOrder.status === 'preparing' ||
+                    snapshot.delivery.activeOrder.status === 'accepted'
+                      ? `${Math.ceil(snapshot.delivery.activeOrder.prepRemainingSec)}s`
+                      : snapshot.delivery.activeOrder.status === 'ready_for_pickup'
+                        ? `${snapshot.delivery.pickupDistanceMeters ?? 0}m`
+                        : `${Math.round(snapshot.delivery.activeOrder.packageState.foodCondition)}% · ${snapshot.delivery.dropoffDistanceMeters ?? 0}m`}
+                  </span>
+                  {snapshot.delivery.canCollectNearby && (
+                    <button
+                      type="button"
+                      data-hud-control="true"
+                      onClick={() => {
+                        onUiClick();
+                        onPickupOrder?.();
+                      }}
+                      className="kl-btn-tactile rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-slate-950"
+                    >
+                      Collect
+                    </button>
+                  )}
+                  {snapshot.delivery.canDeliverNearby && (
+                    <button
+                      type="button"
+                      data-hud-control="true"
+                      onClick={() => {
+                        onUiClick();
+                        onDeliverOrder?.();
+                      }}
+                      className="kl-btn-tactile rounded-md bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-slate-950"
+                    >
+                      Deliver
+                    </button>
+                  )}
+                </div>
+                <div className="kl-hud-progress-track">
+                  <div
+                    className={`kl-hud-progress-fill kl-progress-sheen ${
+                      snapshot.delivery.activeOrder.status === 'picked_up' ||
+                      snapshot.delivery.activeOrder.status === 'in_transit'
+                        ? 'bg-emerald-400'
+                        : 'bg-amber-400'
+                    }`}
+                    style={{
+                      width: `${Math.max(
+                        12,
+                        Math.min(
+                          100,
+                          snapshot.delivery.activeOrder.status === 'picked_up' ||
+                            snapshot.delivery.activeOrder.status === 'in_transit'
+                            ? Math.round(snapshot.delivery.activeOrder.packageState.temperaturePct)
+                            : snapshot.delivery.activeOrder.status === 'ready_for_pickup'
+                              ? 100
+                              : Math.round(
+                                  Math.max(
+                                    15,
+                                    100 - snapshot.delivery.activeOrder.prepRemainingSec * 6,
+                                  ),
+                                ),
+                        ),
+                      )}%`,
                     }}
-                    className="rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-slate-950"
-                  >
-                    Collect
-                  </button>
-                )}
-                {snapshot.delivery.canDeliverNearby && (
-                  <button
-                    type="button"
-                    data-hud-control="true"
-                    onClick={() => {
-                      onUiClick();
-                      onDeliverOrder?.();
-                    }}
-                    className="rounded-md bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-slate-950"
-                  >
-                    Deliver
-                  </button>
-                )}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -1360,17 +1385,19 @@ export function HudOverlay({
         </div>
       </div>
 
-      {/* CENTER CONTEXTUAL INTERACTION TARGET & SUBTLE NOTICE */}
+      {/* SUBTLE FLOATING TOAST NOTICE */}
+      {hudNotice && (
+        <div className="kl-hud-notice-banner kl-anim-notice">
+          {hudNotice}
+        </div>
+      )}
+
+      {/* CENTER CONTEXTUAL INTERACTION TARGET */}
       <div className="pointer-events-none relative z-10 flex flex-col items-center gap-1.5 self-center">
-        {hudNotice && (
-          <div className="rounded-xl border border-amber-400/40 bg-slate-950/90 px-3.5 py-2 text-center text-xs font-medium text-amber-100 shadow-xl">
-            {hudNotice}
-          </div>
-        )}
         {!isDriving && resolvedInteraction && (
           <div
             aria-label="Nearby Building Marker"
-            className="flex items-center gap-2 rounded-xl border border-white/20 bg-slate-950/88 px-3 py-1.5 text-xs text-slate-100 shadow-lg"
+            className="kl-hud-card kl-anim-card flex items-center gap-2 px-3 py-1.5 text-xs text-slate-100"
           >
             <span className="max-w-[200px] truncate font-semibold text-white">
               {resolvedInteraction.targetName}
@@ -1380,7 +1407,7 @@ export function HudOverlay({
                 · {resolvedInteraction.malayalamName}
               </span>
             )}
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono-tabular text-[10px] font-semibold text-amber-300">
+            <span className="kl-tabular rounded bg-slate-800 px-1.5 py-0.5 font-mono-tabular text-[10px] font-semibold text-amber-300">
               {resolvedInteraction.actionLabel}
               {resolvedInteraction.distanceMeters > 0
                 ? ` · ${resolvedInteraction.distanceMeters}m`
@@ -1391,7 +1418,7 @@ export function HudOverlay({
       </div>
 
       {/* BOTTOM CONTROLS: AUTOMATICALLY SWITCHES BETWEEN ON-FOOT HUD AND DRIVING HUD */}
-      <div className="relative z-10 flex items-end justify-between gap-2">
+      <div className="kl-anim-hud-bottom relative z-10 flex items-end justify-between gap-2">
         {isDriving
           ? isLeftHanded
             ? drivingPedalCluster
@@ -1418,7 +1445,7 @@ export function HudOverlay({
           {isDriving && activeVehicle && (
             <div
               aria-label="Vehicle Telemetry"
-              className="flex items-center gap-2.5 rounded-xl border border-white/20 bg-slate-950/88 px-3 py-1.5 shadow-xl"
+              className="kl-speedo-cluster kl-anim-card flex items-center gap-2.5"
             >
               <div className="flex flex-col">
                 <span className="max-w-[140px] truncate text-[11px] font-semibold text-slate-200">
@@ -1426,7 +1453,7 @@ export function HudOverlay({
                 </span>
                 <div className="flex items-center gap-1.5">
                   <span
-                    className={`rounded px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold ${
+                    className={`kl-tabular rounded px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold ${
                       activeVehicle.gear === 'REVERSE'
                         ? 'bg-rose-500/25 text-rose-300'
                         : activeVehicle.gear === 'BRAKE' || activeVehicle.gear === 'HANDBRAKE'
@@ -1440,7 +1467,7 @@ export function HudOverlay({
                   </span>
                   {activeVehicle.damageState !== 'undamaged' && (
                     <span
-                      className={`rounded px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold uppercase ${
+                      className={`kl-tabular rounded px-1.5 py-0.5 font-mono-tabular text-[9px] font-bold uppercase ${
                         activeVehicle.damageState === 'severe'
                           ? 'bg-rose-500/30 text-rose-300'
                           : activeVehicle.damageState === 'moderate'
@@ -1454,7 +1481,7 @@ export function HudOverlay({
                 </div>
               </div>
               <div className="flex items-baseline gap-0.5 border-l border-white/15 pl-2.5">
-                <span className="font-mono-tabular text-xl font-extrabold leading-none text-amber-300">
+                <span className="kl-tabular font-mono-tabular text-xl font-extrabold leading-none text-amber-300">
                   {activeVehicle.speedKmh}
                 </span>
                 <span className="font-mono-tabular text-[10px] font-semibold text-slate-400">

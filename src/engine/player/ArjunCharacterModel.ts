@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createFoodModel } from '../world/KeralaFoodModels.ts';
 
 export type ArjunHairstyleId = 'textured_quiff' | 'short_crop' | 'side_part';
 export type ArjunBeardStyleId = 'clean' | 'light_stubble' | 'trimmed_beard';
@@ -64,9 +65,12 @@ export interface ArjunCharacterRig {
   wristR: THREE.Group;
   contactShadow: THREE.Mesh;
   deliveryBagGroup: THREE.Group;
+  heldPropGroup: THREE.Group;
   getAppearance: () => ArjunAppearanceConfig;
   applyAppearance: (patch: Partial<ArjunAppearanceConfig>) => void;
   setDeliveryBagVisible: (visible: boolean) => void;
+  setHeldActionProp: (prop: 'none' | 'parcel' | 'chai') => void;
+  getHeldActionProp: () => 'none' | 'parcel' | 'chai';
   dispose: () => void;
 }
 
@@ -598,6 +602,20 @@ export function createArjunCharacterRig(
   watchGroup.visible = appearance.watch !== 'none';
   leftArm.wrist.add(watchGroup);
 
+  // Right-wrist Held Contextual Prop Slot (Delivery Parcel or Meter Chai Glass)
+  const heldPropGroup = new THREE.Group();
+  let activeHeldProp: 'none' | 'parcel' | 'chai' = 'none';
+  const heldParcel = createFoodModel('food_parcel_box');
+  heldParcel.scale.setScalar(0.84);
+  heldParcel.position.set(-0.02, -0.075, 0.13);
+  heldParcel.visible = false;
+  const heldChai = createFoodModel('chai_glass');
+  heldChai.scale.setScalar(0.95);
+  heldChai.position.set(0.0, -0.055, 0.068);
+  heldChai.visible = false;
+  heldPropGroup.add(heldParcel, heldChai);
+  rightArm.wrist.add(heldPropGroup);
+
   // Articulated Legs (Hip -> Knee -> Ankle/Foot)
   // Pelvis sits at y = 0.92. Hip joint at -0.04 relative -> y = 0.88.
   // Thigh = 0.42 (-0.42 -> knee y = 0.46), Shin = 0.39 (-0.39 -> ankle y = 0.07), Foot sole sits at -0.07 -> world y = 0.00!
@@ -699,6 +717,13 @@ export function createArjunCharacterRig(
     backpackGroup.visible = !visible && appearance.accessory === 'backpack';
   };
 
+  const setHeldActionProp = (prop: 'none' | 'parcel' | 'chai'): void => {
+    if (activeHeldProp === prop) return;
+    activeHeldProp = prop;
+    heldParcel.visible = prop === 'parcel';
+    heldChai.visible = prop === 'chai';
+  };
+
   return {
     lod,
     lod0,
@@ -722,11 +747,16 @@ export function createArjunCharacterRig(
     wristR: rightArm.wrist,
     contactShadow,
     deliveryBagGroup,
+    heldPropGroup,
     getAppearance: () => ({ ...appearance }),
     applyAppearance,
     setDeliveryBagVisible,
+    setHeldActionProp,
+    getHeldActionProp: () => activeHeldProp,
     dispose: () => {
-      for (const g of ownedGeos) g.dispose();
+      for (const g of ownedGeos) {
+        if (!g.userData?.shared) g.dispose();
+      }
       for (const m of ownedMats) m.dispose();
       shadowTex?.dispose();
     },

@@ -16,12 +16,12 @@ export function ControlsSettingsPanel({
   return (
     <div className="space-y-4">
       {/* Camera Behavior Section */}
-      <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+      <div className="kl-surface-panel rounded-xl p-4">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-amber-300">
             Camera
           </span>
-          <span className="font-mono-tabular text-[11px] text-slate-400">
+          <span className="kl-tabular font-mono-tabular text-[11px] text-slate-400">
             Preset: {settings.cameraPreset.toUpperCase()}
           </span>
         </div>
@@ -32,7 +32,7 @@ export function ControlsSettingsPanel({
               key={preset}
               type="button"
               onClick={() => onUpdateSettings({ cameraPreset: preset })}
-              className={`min-h-[38px] rounded-lg border text-xs font-semibold capitalize ${
+              className={`kl-btn-tactile min-h-[38px] rounded-lg border text-xs font-semibold capitalize ${
                 settings.cameraPreset === preset
                   ? 'border-amber-400 bg-amber-500 text-slate-950'
                   : 'border-white/10 bg-slate-800 text-slate-200 hover:bg-slate-700'
@@ -90,7 +90,7 @@ export function ControlsSettingsPanel({
       </div>
 
       {/* Mobile Joystick & Control Layout Customization Foundation */}
-      <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+      <div className="kl-surface-panel rounded-xl p-4">
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-300">
             <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -210,7 +210,7 @@ export function ControlsSettingsPanel({
       </div>
 
       {/* Accessibility & HUD Visibility */}
-      <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+      <div className="kl-surface-panel rounded-xl p-4">
         <div className="text-xs font-semibold uppercase tracking-wider text-amber-300">
           Accessibility &amp; HUD Display
         </div>
@@ -246,7 +246,7 @@ export function ControlsSettingsPanel({
       </div>
 
       {/* Desktop Keyboard & Touch Reference */}
-      <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4 text-xs text-slate-300">
+      <div className="kl-surface-panel rounded-xl p-4 text-xs text-slate-300">
         <div className="font-semibold uppercase tracking-wider text-amber-300">
           Desktop &amp; Touch Bindings
         </div>

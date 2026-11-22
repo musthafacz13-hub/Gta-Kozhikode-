@@ -783,6 +783,7 @@ export class GameEngine {
         void this.audio.unlockFromGesture().then(() => {
           this.audio.playGameEvent('npc_greet');
         });
+        this.sceneManager?.triggerArjunAction('talk', 1.45);
         const line = getFriendlyNpcGreeting(
           nearbyNpc.id,
           nearbyNpc.variant,
@@ -817,9 +818,11 @@ export class GameEngine {
       return `${b.name} (${b.malayalamName}) · Arjun's Family Home`;
     }
     if (isTeaShop) {
+      this.sceneManager?.triggerArjunAction('drink_tea', 1.6);
       return `${b.name} (${b.malayalamName}) · Hot Meter Chai & Pazham Pori · Check Orders for pickups`;
     }
     if (nearRest) {
+      this.sceneManager?.triggerArjunAction('talk', 1.25);
       return `${nearRest.restaurant.name} (${nearRest.restaurant.malayalamName}) · ${nearRest.restaurant.ambientTag}`;
     }
     if (b.interiorEligible) {
@@ -1029,6 +1032,7 @@ export class GameEngine {
     this.progression.discoverRestaurant(res.order.restaurantId);
     this.applyDeliveryDestination(res.order);
     this.syncDeliveryVisuals();
+    this.sceneManager?.triggerArjunAction('pickup_package', 1.35);
     void this.audio.unlockFromGesture().then(() => {
       this.audio.playGameEvent('food_pickup');
     });
@@ -1057,6 +1061,7 @@ export class GameEngine {
       this.sceneManager?.setDestinationBeacon(null);
     }
     this.syncDeliveryVisuals();
+    this.sceneManager?.triggerArjunAction('deliver_package', 1.45);
     void this.audio.unlockFromGesture().then(() => {
       this.audio.playGameEvent('delivery_complete');
       this.audio.playGameEvent('reward_chime');

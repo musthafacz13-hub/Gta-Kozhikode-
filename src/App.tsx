@@ -7,6 +7,7 @@ import { KOZHIKODE_GAZETTEER_PLACES } from './engine/world/KozhikodeGazetteer.ts
 import { KOZHIKODE_REGIONS } from './engine/world/KozhikodeGeography.ts';
 import { DeliveryAndLifeModal } from './ui/DeliveryAndLifeModal.tsx';
 import { HudOverlay } from './ui/HudOverlay.tsx';
+import { LandscapeOrientationGuard } from './ui/LandscapeOrientationGuard.tsx';
 import { PauseDiagnosticsModal } from './ui/PauseDiagnosticsModal.tsx';
 import { TitleScreen } from './ui/TitleScreen.tsx';
 import { WorldMapModal } from './ui/WorldMapModal.tsx';
@@ -217,6 +218,7 @@ function GameShell() {
 
   return (
     <div className="relative h-dvh w-screen overflow-hidden bg-slate-950">
+      <LandscapeOrientationGuard />
       {/* Isolated WebGL canvas host */}
       <div ref={canvasHostRef} className="absolute inset-0 h-full w-full touch-none select-none" />
 

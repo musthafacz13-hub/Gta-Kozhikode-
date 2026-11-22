@@ -22,6 +22,7 @@ import {
   buildKeralaChaiPeedika,
   type ChaiPeedikaInstance,
 } from './KeralaChaiPeedika.ts';
+import type { AnimatedRestaurantInstance } from './RestaurantInteriorFactory.ts';
 import {
   addBusStopShelter,
   addConstructionSiteProps,
@@ -87,6 +88,11 @@ export interface ClaimedParkedVehicle {
   lod: THREE.Object3D;
 }
 
+interface PalmCrownBatch {
+  mesh: THREE.InstancedMesh;
+  entries: { x: number; y: number; z: number; rotY: number; scale: number }[];
+}
+
 interface LoadedChunk {
   key: string;
   cx: number;
@@ -95,6 +101,8 @@ interface LoadedChunk {
   colliders: StaticAabbCollider[];
   buildings: RegisteredBuildingRecord[];
   teaShops: ChaiPeedikaInstance[];
+  animatedRestaurants: AnimatedRestaurantInstance[];
+  palmBatches: PalmCrownBatch[];
   parkedVehicles: ParkedVehicleEntry[];
 }
 
@@ -139,10 +147,13 @@ export class WorldStreamer {
   private activeColliders: StaticAabbCollider[] = [];
   private activeBuildings: RegisteredBuildingRecord[] = [];
   private activeTeaShops: ChaiPeedikaInstance[] = [];
+  private activeRestaurants: AnimatedRestaurantInstance[] = [];
   private activeParkedVehicles: ParkedVehicleEntry[] = [];
   private readonly claimedParkedIds = new Set<string>();
   private loadingChunkKey = '';
   private loadingParkedBuffer: ParkedVehicleEntry[] | null = null;
+  private loadingRestaurantBuffer: AnimatedRestaurantInstance[] | null = null;
+  private loadingPalmBuffer: PalmCrownBatch[] | null = null;
   private loadingParkedCounter = 0;
   private collidersDirty = true;
   private preset: GraphicsPresetProfile;
@@ -152,6 +163,7 @@ export class WorldStreamer {
   private pickupBeaconGroup: THREE.Group | null = null;
   private dropoffBeaconGroup: THREE.Group | null = null;
   private readonly floatingBoats: { mesh: THREE.Object3D; baseY: number; phase: number }[] = [];
+  private readonly warmSpotLights: THREE.PointLight[] = [];
   private simTimeSec = 0;
 
   constructor(mats: MaterialLibrary, preset: GraphicsPresetProfile) {
@@ -202,6 +214,12 @@ export class WorldStreamer {
     };
 
     this.root.add(this.baseGroup, this.horizonGroup, this.chunksGroup);
+    for (let i = 0; i < 3; i++) {
+      const warmLight = new THREE.PointLight(0xffb454, 0, 18, 1.8);
+      warmLight.castShadow = false;
+      this.warmSpotLights.push(warmLight);
+      this.root.add(warmLight);
+    }
     this.buildRegionalTerrainAndRoads();
     this.buildHorizonLandmarks();
   }
@@ -366,6 +384,7 @@ export class WorldStreamer {
     ];
     const mergedBuildings: RegisteredBuildingRecord[] = [];
     const mergedTeaShops: ChaiPeedikaInstance[] = [];
+    const mergedRestaurants: AnimatedRestaurantInstance[] = [];
     const mergedParked: ParkedVehicleEntry[] = [];
     for (const chunk of this.loadedChunks.values()) {
       for (let i = 0; i < chunk.colliders.length; i++) {
@@ -377,6 +396,9 @@ export class WorldStreamer {
       for (let i = 0; i < chunk.teaShops.length; i++) {
         mergedTeaShops.push(chunk.teaShops[i]);
       }
+      for (let i = 0; i < chunk.animatedRestaurants.length; i++) {
+        mergedRestaurants.push(chunk.animatedRestaurants[i]);
+      }
       for (let i = 0; i < chunk.parkedVehicles.length; i++) {
         const pv = chunk.parkedVehicles[i];
         if (!pv.claimed && !this.claimedParkedIds.has(pv.id)) {
@@ -387,6 +409,7 @@ export class WorldStreamer {
     this.activeColliders = mergedColliders;
     this.activeBuildings = mergedBuildings;
     this.activeTeaShops = mergedTeaShops;
+    this.activeRestaurants = mergedRestaurants;
     this.activeParkedVehicles = mergedParked;
     this.collidersDirty = false;
   }
@@ -487,6 +510,13 @@ export class WorldStreamer {
     return this.activeTeaShops;
   }
 
+  getActiveRestaurants(): ReadonlyArray<AnimatedRestaurantInstance> {
+    if (this.collidersDirty) {
+      this.rebuildActiveCaches();
+    }
+    return this.activeRestaurants;
+  }
+
   getNearestTeaShopDistance(x: number, z: number): number {
     const shops = this.getActiveTeaShops();
     let best = 999;
@@ -503,6 +533,7 @@ export class WorldStreamer {
     focusZ: number,
     camera?: THREE.Camera,
     onTeaSfx?: (event: TeaShopSfxEvent, distMeters: number) => void,
+    nightGlowFactor = 0.25,
   ): boolean {
     this.simTimeSec += dt;
     const center = worldToChunkCoords(focusX, focusZ);
@@ -562,6 +593,70 @@ export class WorldStreamer {
     const teaShops = this.getActiveTeaShops();
     for (let i = 0; i < teaShops.length; i++) {
       teaShops[i].update(dt, this.simTimeSec, focusX, focusZ, onTeaSfx);
+    }
+
+    const restaurants = this.getActiveRestaurants();
+    for (let i = 0; i < restaurants.length; i++) {
+      restaurants[i].update(dt, this.simTimeSec, focusX, focusZ, nightGlowFactor);
+    }
+
+    // Gentle coastal coconut palm frond breeze sway on chunks close to the camera
+    if (dt > 0) {
+      for (const chunk of this.loadedChunks.values()) {
+        const chunkCenterX = chunk.cx * CHUNK_SIZE_METERS;
+        const chunkCenterZ = chunk.cz * CHUNK_SIZE_METERS;
+        if (Math.hypot(chunkCenterX - focusX, chunkCenterZ - focusZ) > 135) continue;
+        for (let b = 0; b < chunk.palmBatches.length; b++) {
+          const batch = chunk.palmBatches[b];
+          for (let idx = 0; idx < batch.entries.length; idx++) {
+            const p = batch.entries[idx];
+            const sway = Math.sin(this.simTimeSec * 1.35 + p.x * 0.14 + p.z * 0.11) * 0.032;
+            const nod = Math.cos(this.simTimeSec * 1.05 + p.z * 0.17) * 0.024;
+            _dummy.position.set(p.x, p.y, p.z);
+            _dummy.rotation.set(nod, p.rotY, sway);
+            _dummy.scale.setScalar(p.scale);
+            _dummy.updateMatrix();
+            batch.mesh.setMatrixAt(idx, _dummy.matrix);
+          }
+          batch.mesh.instanceMatrix.needsUpdate = true;
+        }
+      }
+    }
+
+    // Pooled warm restaurant & tea-stall lights during golden dusk / night
+    if (nightGlowFactor > 0.08 && this.preset.tier !== 'low') {
+      const candidates: { x: number; y: number; z: number; dist: number }[] = [];
+      for (let i = 0; i < teaShops.length; i++) {
+        const d = Math.hypot(teaShops[i].x - focusX, teaShops[i].z - focusZ);
+        if (d < 78) candidates.push({ x: teaShops[i].x, y: 2.8, z: teaShops[i].z, dist: d });
+      }
+      for (let i = 0; i < restaurants.length; i++) {
+        const r = restaurants[i];
+        const d = Math.hypot(r.worldX - focusX, r.worldZ - focusZ);
+        if (d < 78) {
+          candidates.push({
+            x: r.interiorGlowLocal.x,
+            y: r.interiorGlowLocal.y,
+            z: r.interiorGlowLocal.z,
+            dist: d,
+          });
+        }
+      }
+      candidates.sort((a, b) => a.dist - b.dist);
+      for (let i = 0; i < this.warmSpotLights.length; i++) {
+        const light = this.warmSpotLights[i];
+        const cand = candidates[i];
+        if (cand) {
+          light.position.set(cand.x, cand.y, cand.z);
+          light.intensity = nightGlowFactor * 2.6;
+        } else {
+          light.intensity = 0;
+        }
+      }
+    } else {
+      for (let i = 0; i < this.warmSpotLights.length; i++) {
+        this.warmSpotLights[i].intensity = 0;
+      }
     }
 
     if (camera) {
@@ -717,11 +812,15 @@ export class WorldStreamer {
     const colliders: StaticAabbCollider[] = [];
     const buildings: RegisteredBuildingRecord[] = [];
     const teaShops: ChaiPeedikaInstance[] = [];
+    const animatedRestaurants: AnimatedRestaurantInstance[] = [];
+    const palmBatches: PalmCrownBatch[] = [];
     const parkedVehicles: ParkedVehicleEntry[] = [];
     const key = `${cx},${cz}`;
 
     this.loadingChunkKey = key;
     this.loadingParkedBuffer = parkedVehicles;
+    this.loadingRestaurantBuffer = animatedRestaurants;
+    this.loadingPalmBuffer = palmBatches;
     this.loadingParkedCounter = 0;
 
     try {
@@ -751,9 +850,22 @@ export class WorldStreamer {
     } finally {
       this.loadingChunkKey = '';
       this.loadingParkedBuffer = null;
+      this.loadingRestaurantBuffer = null;
+      this.loadingPalmBuffer = null;
     }
 
-    return { key, cx, cz, group, colliders, buildings, teaShops, parkedVehicles };
+    return {
+      key,
+      cx,
+      cz,
+      group,
+      colliders,
+      buildings,
+      teaShops,
+      animatedRestaurants,
+      palmBatches,
+      parkedVehicles,
+    };
   }
 
   private addSidewalkPad(group: THREE.Group, x: number, z: number, w: number, d: number, y = 0.09): void {
@@ -769,10 +881,17 @@ export class WorldStreamer {
     buildings: RegisteredBuildingRecord[],
     spec: ProceduralBuildingSpec,
   ): void {
-    const { lod, record } = buildProceduralBuildingLOD(spec, this.mats, this.preset.lodNearDistance);
+    const { lod, record, animatedRestaurant } = buildProceduralBuildingLOD(
+      spec,
+      this.mats,
+      this.preset.lodNearDistance,
+    );
     group.add(lod);
     colliders.push(record.collider);
     buildings.push(record);
+    if (animatedRestaurant) {
+      this.loadingRestaurantBuffer?.push(animatedRestaurant);
+    }
   }
 
   private addParkedVehicleWithCollider(
@@ -841,10 +960,12 @@ export class WorldStreamer {
       trunks.castShadow = true;
       crowns.castShadow = true;
 
+      const palmEntries: { x: number; y: number; z: number; rotY: number; scale: number }[] = [];
       for (let i = 0; i < palmCount; i++) {
         const [x, y, z, s] = palms[i];
+        const rotY = (i * 1.37) % (Math.PI * 2);
         _dummy.position.set(x, y, z);
-        _dummy.rotation.set(0, (i * 1.37) % (Math.PI * 2), 0);
+        _dummy.rotation.set(0, rotY, 0);
         _dummy.scale.setScalar(s);
         _dummy.updateMatrix();
         trunks.setMatrixAt(i, _dummy.matrix);
@@ -852,6 +973,7 @@ export class WorldStreamer {
         nuts.setMatrixAt(i, _dummy.matrix);
         _tint.setHSL(0.3 + (i % 3) * 0.02, 0.52, 0.34 + (i % 4) * 0.03);
         crowns.setColorAt(i, _tint);
+        palmEntries.push({ x, y, z, rotY, scale: s });
       }
       trunks.instanceMatrix.needsUpdate = true;
       crowns.instanceMatrix.needsUpdate = true;
@@ -861,6 +983,7 @@ export class WorldStreamer {
       crowns.computeBoundingSphere();
       nuts.computeBoundingSphere();
       group.add(trunks, crowns, nuts);
+      this.loadingPalmBuffer?.push({ mesh: crowns, entries: palmEntries });
     }
 
     if (shades.length > 0) {

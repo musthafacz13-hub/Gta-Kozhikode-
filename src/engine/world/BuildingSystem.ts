@@ -2,6 +2,13 @@ import * as THREE from 'three';
 import type { StaticAabbCollider } from '../player/PlayerController.ts';
 import type { MaterialLibrary } from '../rendering/MaterialLibrary.ts';
 import { worldToGeo } from './GeoProjection.ts';
+import { createFoodModel } from './KeralaFoodModels.ts';
+import { createKeralaNpcRig } from './KeralaNpcRig.ts';
+import {
+  buildRestaurantGroundInterior,
+  resolveRestaurantCategoryForBuilding,
+  type AnimatedRestaurantInstance,
+} from './RestaurantInteriorFactory.ts';
 
 export type ResidentialBuildingArchetype =
   | 'kerala_traditional'
@@ -294,7 +301,11 @@ export function buildProceduralBuildingLOD(
   spec: ProceduralBuildingSpec,
   mats: MaterialLibrary,
   lodDistance = 115,
-): { lod: THREE.LOD; record: RegisteredBuildingRecord } {
+): {
+  lod: THREE.LOD;
+  record: RegisteredBuildingRecord;
+  animatedRestaurant?: AnimatedRestaurantInstance;
+} {
   const geos = getSharedBuildingGeometries();
   const baseY = spec.y ?? 0.18;
   const category = classifyBuildingCategory(spec.archetype);
@@ -305,6 +316,7 @@ export function buildProceduralBuildingLOD(
 
   const lod0 = new THREE.Group();
   const lod1 = new THREE.Group();
+  let animatedRestaurant: AnimatedRestaurantInstance | undefined;
 
   const floorH = spec.archetype === 'hospital' || spec.archetype === 'shopping_complex' ? 3.8 : 3.45;
   const groundH = category === 'residential' && spec.archetype !== 'mixed_residential' ? 3.5 : 4.2;
@@ -404,28 +416,55 @@ export function buildProceduralBuildingLOD(
       }
     }
 
-    // Recessed ground-floor shopfront core + alternating shutter/illuminated glass bays
-    lod0.add(makeScaledBox(geos, mats.shutterSteelMat, spec.width - 0.6, groundH, spec.depth - 1.5, 0, 0.36 + groundH / 2, -0.45, true, true));
+    const restaurantCat = resolveRestaurantCategoryForBuilding(
+      spec.id,
+      spec.archetype,
+      spec.businessTag,
+    );
 
-    const bayCount = Math.max(2, Math.floor(spec.width / 4.2));
-    const baySpacing = (spec.width - 2.0) / bayCount;
-    for (let b = 0; b < bayCount; b++) {
-      const bx = -spec.width / 2 + 1.0 + baySpacing * (b + 0.5);
-      const isLit = spec.archetype === 'shopping_complex' || spec.archetype === 'hotel' || b % 2 === 0;
-      lod0.add(
-        makeScaledBox(
-          geos,
-          isLit ? mats.shopGlassNightMat : mats.shutterSteelMat,
-          baySpacing * 0.74,
-          2.65,
-          0.16,
-          bx,
-          0.36 + 1.45,
-          spec.depth / 2 - 1.1,
-          false,
-          false,
-        ),
+    if (restaurantCat) {
+      // Open-front animated Kozhikode restaurant/bakery/tea interior visible from the street
+      const interior = buildRestaurantGroundInterior(
+        {
+          buildingId: spec.id,
+          category: restaurantCat,
+          width: spec.width,
+          depth: spec.depth,
+          groundH,
+          worldX: spec.x,
+          worldZ: spec.z,
+          rotY: spec.rotY,
+          englishName: spec.english,
+          malayalamName: spec.malayalam,
+        },
+        mats,
       );
+      lod0.add(interior.group);
+      animatedRestaurant = interior.instance;
+    } else {
+      // Recessed ground-floor shopfront core + alternating shutter/illuminated glass bays
+      lod0.add(makeScaledBox(geos, mats.shutterSteelMat, spec.width - 0.6, groundH, spec.depth - 1.5, 0, 0.36 + groundH / 2, -0.45, true, true));
+
+      const bayCount = Math.max(2, Math.floor(spec.width / 4.2));
+      const baySpacing = (spec.width - 2.0) / bayCount;
+      for (let b = 0; b < bayCount; b++) {
+        const bx = -spec.width / 2 + 1.0 + baySpacing * (b + 0.5);
+        const isLit = spec.archetype === 'shopping_complex' || spec.archetype === 'hotel' || b % 2 === 0;
+        lod0.add(
+          makeScaledBox(
+            geos,
+            isLit ? mats.shopGlassNightMat : mats.shutterSteelMat,
+            baySpacing * 0.74,
+            2.65,
+            0.16,
+            bx,
+            0.36 + 1.45,
+            spec.depth / 2 - 1.1,
+            false,
+            false,
+          ),
+        );
+      }
     }
 
     // Front arcade pillars
@@ -534,7 +573,7 @@ export function buildProceduralBuildingLOD(
     },
   };
 
-  return { lod, record };
+  return { lod, record, animatedRestaurant };
 }
 
 /**
@@ -678,6 +717,23 @@ export function buildRailwayStationComplex(
     '#fef08a',
   );
   lod0.add(makeScaledBox(geos, cltSign, 11.5, 1.45, 0.24, 0, 5.55, depth / 2 + 1.8, false, false));
+
+  // CLT Junction Express Snack & Parcel Counter Kiosk under East Arrival Canopy
+  const expressKiosk = new THREE.Group();
+  expressKiosk.position.set(10.2, 0.55, depth / 2 - 0.1);
+  expressKiosk.add(makeScaledBox(geos, mats.teakWoodMat, 3.6, 1.05, 1.15, 0, 0.52, 0, true, true));
+  expressKiosk.add(makeScaledBox(geos, mats.stuccoCreamMat, 3.7, 0.08, 1.25, 0, 1.08, 0, false, true));
+  expressKiosk.add(makeScaledBox(geos, mats.getSignMaterial('clt_express_kiosk', 'എക്സ്പ്രസ്സ് കിച്ചൺ', 'CLT EXPRESS KITCHEN', '#7c2d12', '#fde68a'), 3.2, 0.52, 0.1, 0, 2.35, 0.35, false, false));
+  const stationParcel = createFoodModel('food_parcel_box');
+  stationParcel.position.set(-0.85, 1.12, 0.15);
+  const stationSnacks = createFoodModel('snacks_assortment');
+  stationSnacks.position.set(0.15, 1.12, 0.12);
+  const stationChai = createFoodModel('chai_glass');
+  stationChai.position.set(1.0, 1.12, 0.18);
+  const stationVendor = createKeralaNpcRig('worker', 307);
+  stationVendor.lod.position.set(0, 0, -0.85);
+  expressKiosk.add(stationParcel, stationSnacks, stationChai, stationVendor.lod);
+  lod0.add(expressKiosk);
 
   // Terracotta station roof + platform rear awning
   const stRoof = new THREE.Mesh(geos.unitHipCone, mats.terracottaRoofMat);

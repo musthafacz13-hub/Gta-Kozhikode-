@@ -1,0 +1,157 @@
+:root {
+  /* Kozhikode Coastal & Heritage Colour Tokens */
+  --kl-bg-obsidian: #070d14;
+  --kl-bg-deep: #0b1520;
+  --kl-surface-panel: rgba(11, 20, 31, 0.9);
+  --kl-surface-card: rgba(16, 28, 42, 0.88);
+  --kl-surface-card-hover: rgba(24, 41, 60, 0.94);
+  --kl-surface-subtle: rgba(255, 255, 255, 0.045);
+  --kl-surface-overlay: rgba(4, 9, 15, 0.72);
+
+  /* Ink & Typography */
+  --kl-ink-primary: #f8fafc;
+  --kl-ink-secondary: #cbd5e1;
+  --kl-ink-muted: #94a3b8;
+  --kl-ink-warm: #fef3c7;
+
+  /* Kozhikode Cultural Accents */
+  --kl-accent-brass: #e5a93c;
+  --kl-accent-brass-bright: #fbbf24;
+  --kl-accent-brass-soft: rgba(229, 169, 60, 0.16);
+  --kl-accent-emerald: #22c58b;
+  --kl-accent-emerald-deep: #0f766e;
+  --kl-accent-emerald-soft: rgba(34, 197, 139, 0.16);
+  --kl-accent-terracotta: #d96b43;
+  --kl-accent-terracotta-soft: rgba(217, 107, 67, 0.18);
+  --kl-accent-coastal: #38bdf8;
+  --kl-accent-coastal-soft: rgba(56, 189, 248, 0.16);
+  --kl-accent-crimson: #f43f5e;
+
+  /* Hairlines & Borders */
+  --kl-border-subtle: rgba(226, 232, 240, 0.12);
+  --kl-border-medium: rgba(226, 232, 240, 0.2);
+  --kl-border-brass: rgba(245, 185, 66, 0.38);
+  --kl-border-emerald: rgba(34, 197, 139, 0.36);
+
+  /* Font Stacks */
+  --kl-font-display: 'Barlow Condensed', system-ui, -apple-system, sans-serif;
+  --kl-font-sans: 'Plus Jakarta Sans', 'Noto Sans Malayalam', system-ui, -apple-system, sans-serif;
+  --kl-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Elevation */
+  --kl-shadow-sm: 0 4px 12px rgba(2, 6, 14, 0.32);
+  --kl-shadow-md: 0 12px 28px rgba(2, 6, 14, 0.48);
+  --kl-shadow-lg: 0 22px 54px rgba(2, 6, 14, 0.65);
+
+  /* Radii */
+  --kl-radius-sm: 0.625rem;
+  --kl-radius-md: 0.875rem;
+  --kl-radius-lg: 1.25rem;
+  --kl-radius-xl: 1.5rem;
+
+  /* Motion Timing */
+  --kl-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --kl-ease-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --kl-dur-fast: 140ms;
+  --kl-dur-med: 240ms;
+  --kl-dur-slow: 360ms;
+
+  /* Z-index Scale */
+  --kl-z-touch: 10;
+  --kl-z-hud: 20;
+  --kl-z-controls: 24;
+  --kl-z-prompt: 28;
+  --kl-z-modal: 40;
+  --kl-z-toast: 50;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.kl-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.kl-display {
+  font-family: var(--kl-font-display);
+  letter-spacing: 0.04em;
+}
+
+.kl-mono {
+  font-family: var(--kl-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.kl-surface-panel {
+  background: linear-gradient(165deg, rgba(16, 28, 42, 0.94), rgba(8, 15, 24, 0.94));
+  border: 1px solid var(--kl-border-subtle);
+  box-shadow: var(--kl-shadow-md);
+}
+
+.kl-surface-card {
+  background: var(--kl-surface-card);
+  border: 1px solid var(--kl-border-subtle);
+  transition:
+    transform var(--kl-dur-fast) var(--kl-ease-out),
+    border-color var(--kl-dur-fast) var(--kl-ease-out),
+    background-color var(--kl-dur-fast) var(--kl-ease-out),
+    box-shadow var(--kl-dur-fast) var(--kl-ease-out);
+}
+
+.kl-surface-card:hover {
+  background: var(--kl-surface-card-hover);
+  border-color: var(--kl-border-medium);
+}
+
+.kl-btn-tactile {
+  transition:
+    transform var(--kl-dur-fast) var(--kl-ease-spring),
+    background-color var(--kl-dur-fast) var(--kl-ease-out),
+    border-color var(--kl-dur-fast) var(--kl-ease-out),
+    box-shadow var(--kl-dur-fast) var(--kl-ease-out),
+    opacity var(--kl-dur-fast) ease;
+  cursor: pointer;
+}
+
+.kl-btn-tactile:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.kl-btn-tactile:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.kl-btn-tactile:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--kl-accent-brass-bright);
+  outline-offset: 2px;
+}
+
+/* Custom thin scrollbar for modals & side lists */
+.kl-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 169, 60, 0.35) rgba(15, 23, 42, 0.45);
+}
+
+.kl-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.kl-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 999px;
+}
+
+.kl-scroll::-webkit-scrollbar-thumb {
+  background: rgba(229, 169, 60, 0.38);
+  border-radius: 999px;
+}
+
+.kl-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(229, 169, 60, 0.62);
+}

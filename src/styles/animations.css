@@ -1,0 +1,185 @@
+@keyframes klFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes klHudEnterTop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes klHudEnterBottom {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes klModalPopIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes klPromptSpring {
+  0% {
+    opacity: 0;
+    transform: translate3d(-50%, 10px, 0) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0) scale(1);
+  }
+}
+
+@keyframes klNoticeToast {
+  0% {
+    opacity: 0;
+    transform: translate3d(-50%, -8px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0) scale(1);
+  }
+}
+
+@keyframes klProgressSheen {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes klCardRise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes klTitleRise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes klRewardFloat {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.92);
+  }
+  16% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.kl-anim-fade {
+  animation: klFadeIn var(--kl-dur-med) var(--kl-ease-out) both;
+}
+
+.kl-anim-hud-top {
+  animation: klHudEnterTop var(--kl-dur-slow) var(--kl-ease-out) both;
+}
+
+.kl-anim-hud-bottom {
+  animation: klHudEnterBottom var(--kl-dur-slow) var(--kl-ease-out) both;
+}
+
+.kl-anim-modal {
+  animation: klModalPopIn var(--kl-dur-med) var(--kl-ease-out) both;
+}
+
+.kl-anim-prompt {
+  animation: klPromptSpring var(--kl-dur-med) var(--kl-ease-spring) both;
+}
+
+.kl-anim-notice {
+  animation: klNoticeToast var(--kl-dur-fast) var(--kl-ease-out) both;
+}
+
+.kl-anim-card {
+  animation: klCardRise var(--kl-dur-med) var(--kl-ease-out) both;
+}
+
+.kl-anim-title {
+  animation: klTitleRise 480ms var(--kl-ease-out) both;
+}
+
+.kl-anim-reward {
+  animation: klRewardFloat var(--kl-dur-slow) var(--kl-ease-spring) both;
+}
+
+.kl-progress-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.kl-progress-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
+  animation: klProgressSheen 2.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kl-anim-fade,
+  .kl-anim-hud-top,
+  .kl-anim-hud-bottom,
+  .kl-anim-modal,
+  .kl-anim-prompt,
+  .kl-anim-notice,
+  .kl-anim-card,
+  .kl-anim-title,
+  .kl-anim-reward {
+    animation: none !important;
+  }
+
+  .kl-progress-sheen::after {
+    animation: none !important;
+    display: none;
+  }
+
+  .kl-btn-tactile,
+  .kl-surface-card,
+  .kl-control-pad,
+  .kl-joystick-knob {
+    transition: none !important;
+  }
+}
